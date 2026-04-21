@@ -1,0 +1,64 @@
+After running the container and attaching to it:
+    docker exec -it meteornet bash
+
+You need to symlink the libcublas and libcudart files
+sudo mkdir -p /usr/local/cuda-9.0/lib64
+
+sudo ln -sf /usr/local/cuda-9.0/targets/x86_64-linux/lib/libcublas.so.9.0.176 \
+             /usr/local/cuda-9.0/lib64/libcublas.so
+
+sudo ln -sf /usr/local/cuda-9.0/targets/x86_64-linux/lib/libcublas.so.9.0.176 \
+             /usr/local/cuda-9.0/lib64/libcublas.so.9.0
+
+sudo ln -sf /usr/local/cuda-9.0/targets/x86_64-linux/lib/libcublas.so.9.0.176 \
+             /usr/local/cuda-9.0/lib64/libcublas.so.9.0.176
+
+sudo ln -sf /usr/local/cuda-9.0/targets/x86_64-linux/lib/libcudart.so.9.0 \
+             /usr/local/cuda-9.0/lib64/libcudart.so
+
+sudo ln -sf /usr/local/cuda-9.0/targets/x86_64-linux/lib/libcudart.so.9.0 \
+             /usr/local/cuda-9.0/lib64/libcudart.so.9.0
+
+sudo ln -sf /usr/local/cuda-9.0/targets/x86_64-linux/lib/libcuda.so \
+             /usr/local/cuda-9.0/lib64/libcuda.so
+
+echo "/usr/local/cuda-9.0/lib64" | sudo tee /etc/ld.so.conf.d/cuda-9-0.conf
+sudo ldconfig
+
+
+
+After this you should be able to build the stupid fucking dogshit tf_ops, by running 
+    ./command_make.sh
+
+
+
+
+
+sudo mkdir -p /usr/local/cuda-10.0/lib64
+
+# --- cuBLAS ---
+sudo ln -sf /usr/local/cuda-10.0/targets/x86_64-linux/lib/libcublas.so.10.0.130 \
+             /usr/local/cuda-10.0/lib64/libcublas.so
+
+sudo ln -sf /usr/local/cuda-10.0/targets/x86_64-linux/lib/libcublas.so.10.0.130 \
+             /usr/local/cuda-10.0/lib64/libcublas.so.10.0
+
+sudo ln -sf /usr/local/cuda-10.0/targets/x86_64-linux/lib/libcublas.so.10.0.130 \
+             /usr/local/cuda-10.0/lib64/libcublas.so.10.0.130
+
+
+# --- cuDART ---
+sudo ln -sf /usr/local/cuda-10.0/targets/x86_64-linux/lib/libcudart.so.10.0 \
+             /usr/local/cuda-10.0/lib64/libcudart.so
+
+sudo ln -sf /usr/local/cuda-10.0/targets/x86_64-linux/lib/libcudart.so.10.0 \
+             /usr/local/cuda-10.0/lib64/libcudart.so.10.0
+
+
+# --- libcuda (from driver, not toolkit) ---
+sudo ln -sf /usr/local/cuda-10.0/targets/x86_64-linux/lib/libcuda.so \
+             /usr/local/cuda-10.0/lib64/libcuda.so
+
+
+echo "/usr/local/cuda-10.0/lib64" | sudo tee /etc/ld.so.conf.d/cuda-10-0.conf
+sudo ldconfig
