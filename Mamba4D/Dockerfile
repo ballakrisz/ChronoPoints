@@ -83,8 +83,17 @@ ENV TORCH_CUDA_ARCH_LIST=6.1
 
 # Install mamba-ssm
 # Make sure to build against the Compute Capability (CC) of YOUR GPU. 
-    # import torch
-    # print(torch.cuda.get_device_capability()) --> (6,1) --> print indent "cc_flag.append(\"arch=compute_61,code=sm_61\")";\
+    # You can either get your CC by looking up your GPU model at: 
+        # https://developer.nvidia.com/cuda/gpus
+
+    # Or you can get it via PyTorch: 
+        # python3 -c "import torch; print(torch.cuda.get_device_capability())"
+
+# Once you have it, replace this line:
+    # print indent "cc_flag.append(\"arch=compute_61,code=sm_61\")";\
+# If your CC is 10.3, then your line should look like this:
+    # print indent "cc_flag.append(\"arch=compute_103,code=sm_103\")";\
+
 RUN git clone https://github.com/state-spaces/mamba.git && \
     cd mamba && \
     awk '{\
