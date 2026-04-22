@@ -6,8 +6,8 @@ data=processed_data
 num_point=512
 num_frame=2
 batch_size=16
-model_path=log_${model}_${num_frame}/best_model.ckpt
-log_dir=log_${model}_${num_frame}_test
+model_path=output/log_${model}_${num_frame}/best_model.ckpt
+log_dir=output/log_${model}_${num_frame}_test
 
 
 python3 action_cls/test.py \

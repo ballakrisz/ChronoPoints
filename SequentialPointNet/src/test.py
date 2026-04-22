@@ -9,9 +9,13 @@ import random
 import time
 #import gpu_utils as g
 import numpy as np
+import sys
+from pathlib import Path
+
+sys.path.append(str(Path(__file__).resolve().parents[1])) # Add the src directory to sys.path
+from data.dataset import PointSeriesDataset
 
 from model import PointNet_Plus#,Attension_Point,TVLAD
-from dataset import NTU_RGBD
 from utils import group_points_4DV_T_S
 
 from PIL import Image
@@ -34,9 +38,9 @@ FRAME_GAP_DICT = {
 }
 
 def main(args=None):
-    parser = argparse.ArgumentParser(description = "Training")
+    parser = argparse.ArgumentParser(description = "Evaluation")
 
-    parser.add_argument('--batchSize', type=int, default=32, help='input batch size')
+    parser.add_argument('--batchSize', type=int, default=16, help='input batch size')#￥￥￥￥
     parser.add_argument('--nepoch', type=int, default=150, help='number of epochs to train for')
     parser.add_argument('--INPUT_FEATURE_NUM', type=int, default = 3,  help='number of input point features')
     parser.add_argument('--temperal_num', type=int, default = 3,  help='number of input point features')
@@ -44,27 +48,28 @@ def main(args=None):
     parser.add_argument('--dataset', type=str, default='ntu60', help='how to aggregate temporal split features: ntu120 | ntu60')
 
     parser.add_argument('--weight_decay', type=float, default=0.0008, help='weight decay (SGD only)')
-    parser.add_argument('--learning_rate', type=float, default=0.001, help='learning rate at t=0')
+    parser.add_argument('--learning_rate', type=float, default=0.001, help='learning rate at t=0')#￥￥￥￥
+    parser.add_argument('--gamma', type=float, default=0.5, help='')#￥￥￥￥
     parser.add_argument('--momentum', type=float, default=0.9, help='momentum (SGD only)')
     parser.add_argument('--workers', type=int, default=0, help='number of data loading workers')
     parser.add_argument('--seed', type=int, default=0, required=True)
 
-    parser.add_argument('--root_path', type=str, default='C:\\Users\\Administrator\\Desktop\\LX\\paper\\dataset\\Prosessed_dataset\\01_3DV-Action-master(base-run-version)(FPS512)(单时序流4维特征)',  help='preprocess folder')
-    parser.add_argument('--depth_path', type=str, default='C:\\Users\\Administrator\\Desktop\\LX\\paper\\dataset\\Prosessed_dataset\\3DV-Action-master\\ntu60dataset\\',  help='raw_depth_png')
-    #################改1#############
+    parser.add_argument('--root_path', type=str, default='C:\\Users\\Administrator\\Desktop\\LX\\paper\\dataset\\Prosessed_dataset\\01_MSR3D',  help='preprocess folder')
+    # parser.add_argument('--depth_path', type=str, default='C:\\Users\\Administrator\\Desktop\\LX\paper\\dataset\\Prosessed_dataset\\01_MSR3D\\',  help='raw_depth_png')
+    ################
     # parser.add_argument('--save_root_dir', type=str, default='C:\\Users\\Administrator\\Desktop\\LX\\paper\\code\\3DV-Action-master\\models\\ntu60\\xsub',  help='output folder')
-    parser.add_argument('--save_root_dir', type=str, default='C:\\Users\\Administrator\\Desktop\\LX\\paper\\code\\Models_Parameter\\03_3DV-Action-master(base-run-version)(FPS512-64-K32)(2层局部+时序池化3层简单)(t=6_stride=2_KC=64)(单时序流4维特征)(单流读取)\\models\\ntu60\\xsub',  help='output folder')
+    parser.add_argument('--save_root_dir', type=str, default='/home/appuser/src/output',  help='output folder')
     parser.add_argument('--model', type=str, default = '',  help='model name for training resume')
     parser.add_argument('--optimizer', type=str, default = '',  help='optimizer name for training resume')
     
     parser.add_argument('--ngpu', type=int, default=1, help='# GPUs')
     parser.add_argument('--main_gpu', type=int, default=0, help='main GPU id') # CUDA_VISIBLE_DEVICES=0 python train.py
 
-    ########时序
+    ########
     parser.add_argument('--Seg_size', type=int, default =1,  help='number of frame in seg')
     parser.add_argument('--stride', type=int, default = 1,  help='stride of seg')
-    parser.add_argument('--all_framenum', type=int, default = 10, required=True,  help='number of action frame')
-    parser.add_argument('--framenum', type=int, default = 10,  help='number of action frame')
+    parser.add_argument('--all_framenum', type=int, default = 10,  help='number of action frame')
+    parser.add_argument('--framenum', type=int, default = 10, required=True, help='number of action frame')
     parser.add_argument('--EACH_FRAME_SAMPLE_NUM', type=int, default = 512,  help='number of sample points in each frame')
     parser.add_argument('--T_knn_K', type=int, default = 48,  help='K for knn search of temperal stream')
     parser.add_argument('--T_knn_K2', type=int, default = 16,  help='K for knn search of temperal stream')
@@ -77,12 +82,13 @@ def main(args=None):
     parser.add_argument('--size', type=str, default='full', help='how many samples do we load: small | full')
     parser.add_argument('--SAMPLE_NUM', type=int, default = 2048,  help='number of sample points')
 
-    parser.add_argument('--Num_Class', type=int, default = 60,  help='number of outputs')
+    parser.add_argument('--Num_Class', type=int, default = 10,  help='number of outputs')
     parser.add_argument('--knn_K', type=int, default = 64,  help='K for knn search')
     parser.add_argument('--sample_num_level1', type=int, default = 512,  help='number of first layer groups')
     parser.add_argument('--sample_num_level2', type=int, default = 128,  help='number of second layer groups')
     parser.add_argument('--ball_radius', type=float, default=0.1, help='square of radius for ball query in level 1')#0.025 -> 0.05 for detph
     parser.add_argument('--ball_radius2', type=float, default=0.2, help='square of radius for ball query in level 2')# 0.08 -> 0.01 for depth
+
 
     opt = parser.parse_args()
     print (opt)
@@ -90,17 +96,25 @@ def main(args=None):
 
     random.seed(opt.seed)
     torch.manual_seed(opt.seed)
-
-    opt.all_framenum = opt.framenum
-    opt.config = "f{}g{}".format(opt.framenum, FRAME_GAP_DICT[opt.framenum])
     
-    opt.save_root_dir = f"{opt.save_root_dir}/{opt.config}_seed_{opt.seed}"
+    opt.config = "f{}g{}".format(opt.framenum, FRAME_GAP_DICT[opt.framenum])
+    opt.all_framenum = opt. framenum
 
-    try:
-        os.makedirs(opt.save_root_dir)
-    except OSError:
-        pass
-    logging.basicConfig(format='%(asctime)s %(message)s', datefmt='%Y/%m/%d %H:%M:%S', filename=os.path.join(opt.save_root_dir, 'train00.log'), level=logging.INFO)
+    # ===== Create run directory based on config =====
+    run_dir = os.path.join(opt.save_root_dir, f"{opt.config}_seed_{opt.seed}")
+
+    os.makedirs(run_dir, exist_ok=True)
+
+    # update save path
+    opt.save_root_dir = run_dir
+
+    # logging inside this folder
+    logging.basicConfig(
+        format='%(asctime)s %(message)s',
+        datefmt='%Y/%m/%d %H:%M:%S',
+        filename=os.path.join(opt.save_root_dir, 'test.log'),
+        level=logging.INFO
+    )
 
     os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 
@@ -109,69 +123,98 @@ def main(args=None):
     torch.cuda.empty_cache()
 
     #################改2#############
-    data_val = NTU_RGBD(root_path = opt.root_path, opt=opt,
-        DATA_CROSS_VIEW = False,
-        full_train = False,
-        validation = False,
-        test = True,
-        Transform = False
-        )
+    data_val = PointSeriesDataset(
+        data_root_dir='/home/appuser/chrono_points_cls_benchmark',
+        split='test',
+        max_points_per_frame=512,
+        single_return_only=True,
+        preload=True,
+        sampling_strategy="farthest",
+        padding_strategy="zero_padding",
+        sequence_format=opt.config
+    )
+    opt.Num_Class = data_val.num_types
     val_loader = DataLoader(dataset = data_val, batch_size = 8,num_workers = 8)
 
     #net =
 
     netR = PointNet_Plus(opt)
     #################改3#############
-    netR.load_state_dict(torch.load("C:\\Users\\Administrator\\Desktop\\pointnet_para_89.pth"))
+    netR.load_state_dict(torch.load(os.path.join(opt.save_root_dir, 'best_mAcc.pth')))
 
     netR = torch.nn.DataParallel(netR).cuda()
     netR.cuda()
     print(netR)
+    
+    total_params = sum(p.numel() for p in netR.parameters())
+    trainable_params = sum(p.numel() for p in netR.parameters() if p.requires_grad)
+    print(f"Total parameters: {total_params:,}")
+    print(f"Trainable parameters: {trainable_params:,}")
 
     
     # evaluate mode
     torch.cuda.synchronize()
     netR.eval()
-    conf_mat = np.zeros([opt.Num_Class, opt.Num_Class])
-    conf_mat60 = np.zeros([60, 60])
-    acc = 0.0
-    loss_sigma = 0.0
+
+    conf_mat = np.zeros((opt.Num_Class, opt.Num_Class))
 
     with torch.no_grad(): 
         for i, data in enumerate(tqdm(val_loader)):
-            #print(i)
             torch.cuda.synchronize()
-            group_time_start = time.time()
-            points4DV_T,label,vid_name = data
-            points4DV_T,label = points4DV_T.cuda(),label.cuda()
-            # print('points4DV_T:',points4DV_T.shape)
-            xt, yt = group_points_4DV_T_S(points4DV_T, opt)#B*F*4*Cen*K  B*F*4*Cen*1
-            # print('xt:',xt.shape)
+
+            points4DV_T, label, vid_name = data
+            points4DV_T, label = points4DV_T.cuda(), label.cuda()
+
+            xt, yt = group_points_4DV_T_S(points4DV_T, opt)
             xt = xt.type(torch.FloatTensor)
             yt = yt.type(torch.FloatTensor)
-            forward_time_start= time.time()
-            prediction = netR(xt,yt)
+
+            forward_time_start = time.time()
+            prediction = netR(xt, yt)
             forward_time_end = time.time()
 
-         
-            print('forward time:',forward_time_end-forward_time_start)
-            _, predicted60 = torch.max(prediction.data[:,0:60], 1)
+            # print('forward time:', forward_time_end - forward_time_start)
+
             _, predicted = torch.max(prediction.data, 1)
-            #print(prediction.data)
-            
+
             for j in range(len(label)):
-                cate_i = label[j].cpu().numpy()
-                pre_i = predicted[j].cpu().numpy()
-                if pre_i != cate_i:
-                    logging.info('Video Name:{} -- correct label {} predicted to {}'.format(vid_name[j],cate_i,pre_i))
-                conf_mat[cate_i, pre_i] += 1.0
-                if cate_i<60:
-                    pre_i60 = predicted60[j].cpu().numpy()
-                    conf_mat60[cate_i, pre_i60] += 1.0
+                gt = label[j].item()
+                pred = predicted[j].item()
 
-    print('NTU120:{:.2%} NTU60:{:.2%}--correct number {}--all number {}===Average loss:{:.6%}'.format(conf_mat.trace() / conf_mat.sum(),conf_mat60.trace() / conf_mat60.sum(),conf_mat60.trace(),conf_mat60.sum(),loss_sigma/(i+1)/2))
-    logging.info('{} --nepoch{} set Accuracy:{:.2%}--correct number {}--all number {}===Average loss:{}'.format('Valid', opt.nepoch, conf_mat.trace() / conf_mat.sum(),conf_mat60.trace(),conf_mat60.sum(), loss_sigma/(i+1)))
+                if pred != gt:
+                    logging.info(
+                        'Video Name:{} -- correct label {} predicted to {}'.format(
+                            vid_name[j], gt, pred
+                        )
+                    )
 
+                conf_mat[gt, pred] += 1.0
+
+
+    # ===== Metrics =====
+    OA = conf_mat.trace() / conf_mat.sum()
+
+    class_acc = []
+    for i in range(opt.Num_Class):
+        if conf_mat[i].sum() == 0:
+            class_acc.append(0)
+        else:
+            class_acc.append(conf_mat[i, i] / conf_mat[i].sum())
+
+    mAcc = np.mean(class_acc)
+
+
+    print(
+        '[TEST]: OA={:.2%} mAcc={:.2%}'.format(
+            OA, mAcc
+        )
+    )
+
+    logging.info(
+        '[TEST]: OA={:.2%} mAcc={:.2%}'.format(
+            OA, mAcc
+        )
+    )
         #torch.save(netR.module.state_dict(), '%s/pointnet_para_%d.pth' % (opt.save_root_dir, epoch))
 if __name__ == '__main__':
     main()

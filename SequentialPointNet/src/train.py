@@ -40,7 +40,7 @@ FRAME_GAP_DICT = {
 def main(args=None):
     parser = argparse.ArgumentParser(description = "Training")
 
-    parser.add_argument('--batchSize', type=int, default=32, help='input batch size')#￥￥￥￥
+    parser.add_argument('--batchSize', type=int, default=16, help='input batch size')#￥￥￥￥
     parser.add_argument('--nepoch', type=int, default=150, help='number of epochs to train for')
     parser.add_argument('--INPUT_FEATURE_NUM', type=int, default = 3,  help='number of input point features')
     parser.add_argument('--temperal_num', type=int, default = 3,  help='number of input point features')
@@ -96,17 +96,25 @@ def main(args=None):
 
     random.seed(opt.seed)
     torch.manual_seed(opt.seed)
-
-    opt.all_framenum = opt.framenum
-    opt.config = "f{}g{}".format(opt.framenum, FRAME_GAP_DICT[opt.framenum])
     
-    opt.save_root_dir = f"{opt.save_root_dir}/{opt.config}_seed_{opt.seed}"
+    opt.config = "f{}g{}".format(opt.framenum, FRAME_GAP_DICT[opt.framenum])
+    opt.all_framenum = opt. framenum
 
-    try:
-        os.makedirs(opt.save_root_dir)
-    except OSError:
-        pass
-    logging.basicConfig(format='%(asctime)s %(message)s', datefmt='%Y/%m/%d %H:%M:%S', filename=os.path.join(opt.save_root_dir, 'train00.log'), level=logging.INFO)
+    # ===== Create run directory based on config =====
+    run_dir = os.path.join(opt.save_root_dir, f"{opt.config}_seed_{opt.seed}")
+
+    os.makedirs(run_dir, exist_ok=True)
+
+    # update save path to run-specific directory
+    opt.save_root_dir = run_dir
+
+    # setup logging inside this folder
+    logging.basicConfig(
+        format='%(asctime)s %(message)s',
+        datefmt='%Y/%m/%d %H:%M:%S',
+        filename=os.path.join(opt.save_root_dir, 'train.log'),
+        level=logging.INFO
+    )
 
     os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 
@@ -167,6 +175,7 @@ def main(args=None):
     criterion = torch.nn.CrossEntropyLoss().cuda()
     optimizer = torch.optim.Adam(netR.parameters(), lr=opt.learning_rate, betas = (0.5, 0.999), eps=1e-06)
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=opt.gamma)
+    best_mAcc = 0.0
 
     for epoch in range(opt.nepoch):
         scheduler.step(epoch)
@@ -174,9 +183,8 @@ def main(args=None):
         # switch to train mode
         torch.cuda.synchronize()
         netR.train()
-        acc = 0.0
         loss_sigma = 0.0
-        total1 = 0.0
+        conf_mat = np.zeros((opt.Num_Class, opt.Num_Class))
         timer = time.time()
         
         for i, data in enumerate(tqdm(train_loader, 0)):
@@ -207,60 +215,71 @@ def main(args=None):
             #_, predicted60 = torch.max(prediction.data[:,0:60], 1)
             _, predicted = torch.max(prediction.data, 1)
             # print(predicted.data)
-            acc += (predicted==label).cpu().sum().numpy()
-            total1 += label.size(0)
+            for t, p in zip(label.view(-1), predicted.view(-1)):
+                conf_mat[t.item(), p.item()] += 1
 
         
-        acc_avg = acc/total1
-        loss_avg = loss_sigma/total1
-        print('======>>>>> Online epoch: #%d, lr=%.10f,Acc=%f,correctnum=%f,allnum=%f,avg_loss=%f  <<<<<======' %(epoch, scheduler.get_lr()[0],acc_avg,acc,total1,loss_avg))
-        print("Epoch: " + str(epoch) + " Iter: " + str(i) + " Acc: " + ("%.2f" % acc_avg) +" Classification Loss: " + str(loss_avg))
-        logging.info('======>>>>> Online epoch: #%d, lr=%.10f,Acc=%f,correctnum=%f,allnum=%f,avg_loss=%f  <<<<<======' %(epoch, scheduler.get_lr()[0],acc_avg,acc,total1,loss_avg))
-        logging.info("Epoch: " + str(epoch) + " Iter: " + str(i) + " Acc: " + ("%.2f" % acc_avg) +" Classification Loss: " + str(loss_avg))
+        OA = conf_mat.trace() / conf_mat.sum()
+
+        class_acc = []
+        for i in range(opt.Num_Class):
+            if conf_mat[i].sum() == 0:
+                class_acc.append(0)
+            else:
+                class_acc.append(conf_mat[i, i] / conf_mat[i].sum())
+
+        mAcc = np.mean(class_acc)
+        loss_avg = loss_sigma / conf_mat.sum()
+
+        print(f"[TRAIN] Epoch {epoch} | OA: {OA:.4f} | mAcc: {mAcc:.4f} | Loss: {loss_avg:.4f}")
+        logging.info(f"[TRAIN] Epoch {epoch} | OA: {OA:.4f} | mAcc: {mAcc:.4f} | Loss: {loss_avg:.4f}")
         if ((epoch+1)%1==0 or epoch==opt.nepoch-1):
-            # evaluate mode
             torch.cuda.synchronize()
             netR.eval()
-            conf_mat = np.zeros([opt.Num_Class, opt.Num_Class])
-            conf_mat60 = np.zeros([20, 20])
-            acc = 0.0
+
+            conf_mat = np.zeros((opt.Num_Class, opt.Num_Class))
             loss_sigma = 0.0
 
-            with torch.no_grad():       
+            with torch.no_grad():
                 for i, data in enumerate(tqdm(val_loader)):
-                    torch.cuda.synchronize()
+                    points4DV_T, label, v_name = data
+                    points4DV_T, label = points4DV_T.cuda(), label.cuda()
 
-                    points4DV_T,label,v_name = data
-                    # print(v_name)
-                    points4DV_T,label = points4DV_T.cuda(),label.cuda()
-
-                    xt, yt = group_points_4DV_T_S(points4DV_T, opt)#(B*F)*4*Cen*K  (B*F)*4*Cen*1
-                    
+                    xt, yt = group_points_4DV_T_S(points4DV_T, opt)
                     xt = xt.type(torch.FloatTensor)
                     yt = yt.type(torch.FloatTensor)
 
-                    prediction = netR(xt,yt)
+                    prediction = netR(xt, yt)
+                    loss = criterion(prediction, label)
 
-                    loss = criterion(prediction,label)
-                    # print(label,prediction)
-                    _, predicted60 = torch.max(prediction.data[:,0:20], 1)
                     _, predicted = torch.max(prediction.data, 1)
-                    # print(predicted60.data)
+
                     loss_sigma += loss.item()
 
-                    for j in range(len(label)):
-                        cate_i = label[j].cpu().numpy()
-                        pre_i = predicted[j].cpu().numpy()
-                        conf_mat[cate_i, pre_i] += 1.0
-                        
-                        if cate_i<20:
-                            pre_i60 = predicted60[j].cpu().numpy()
-                            conf_mat60[cate_i, pre_i60] += 1.0
-                    # print(conf_mat)
-            print('MSR120:{:.2%} MSR60:{:.2%}--correct number {}--all number {}===Average loss:{:.6%}'.format(conf_mat.trace() / conf_mat.sum(),conf_mat60.trace() / conf_mat60.sum(),conf_mat60.trace(),conf_mat60.sum(),loss_sigma/(i+1)/2))
-            logging.info('#################{} --epoch{} set Accuracy:{:.2%}--correct number {}--all number {}===Average loss:{}'.format('Valid', epoch, conf_mat.trace() / conf_mat.sum(),conf_mat60.trace(),conf_mat60.sum(), loss_sigma/(i+1)))
+                    for t, p in zip(label.view(-1), predicted.view(-1)):
+                        conf_mat[t.item(), p.item()] += 1
 
-        torch.save(netR.module.state_dict(), '%s/pointnet_para_%d.pth' % (opt.save_root_dir, epoch))
+            OA = conf_mat.trace() / conf_mat.sum()
+
+            class_acc = []
+            for i in range(opt.Num_Class):
+                if conf_mat[i].sum() == 0:
+                    class_acc.append(0)
+                else:
+                    class_acc.append(conf_mat[i, i] / conf_mat[i].sum())
+
+            mAcc = np.mean(class_acc)
+            
+            print(f"[VAL] Epoch {epoch} | OA: {OA:.4f} | mAcc: {mAcc:.4f} | Loss: {loss_sigma/(i+1):.4f}")
+            logging.info(f"[VAL] Epoch {epoch} | OA: {OA:.4f} | mAcc: {mAcc:.4f} | Loss: {loss_sigma/(i+1):.4f}")
+            
+            if mAcc > best_mAcc:
+                best_mAcc = mAcc
+                torch.save(netR.module.state_dict(), os.path.join(opt.save_root_dir, 'best_mAcc.pth'))
+                print("🔥 New best model saved")
+                logging.info("🔥 New best model saved")
+
+            
 if __name__ == '__main__':
     main()
 

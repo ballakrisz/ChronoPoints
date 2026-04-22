@@ -124,14 +124,15 @@ class PointNet_Plus(nn.Module):
         self.maxpoolings = nn.ModuleList([nn.MaxPool2d((K[0],1 ),(K[1],1)) for K in KerStr])
         self.PE=get_positional_encoding(self.framenum,T_nstates_plus_2[2])
 
+        netR_input_size = self.framenum * 1024 + 1024 + 256
         self.netR_FC = nn.Sequential(
             # B*1024
             #nn.Linear(nstates_plus_3[2], nstates_plus_3[3]),
             #nn.BatchNorm1d(nstates_plus_3[3]),
             #nn.ReLU(inplace=True),
             # B*1024
-            
-            nn.Linear((self.framenum+1)*1024 + 256, nstates_plus_3[4]),
+            # nn.Linear(dim_out*4+256, nstates_plus_3[4]),
+            nn.Linear(netR_input_size, nstates_plus_3[4]),
             nn.BatchNorm1d(nstates_plus_3[4]),
             nn.ReLU(inplace=True),
             # B*512
@@ -191,11 +192,9 @@ class PointNet_Plus(nn.Module):
         # xt = self.ca_T2(xt) * xt
         xt = self.net4DV_T2(xt)#
 
-        # xt = [maxpooling(xt) for maxpooling in self.maxpoolings]#B*(2048)*[G]*1
-        # xt = torch.cat(xt,2).squeeze(-1)
-        
+        ''' xt = [maxpooling(xt) for maxpooling in self.maxpoolings]#B*(2048)*[G]*1 '''
+        ''' xt = torch.cat(xt,2).squeeze(-1) '''
         xt = xt.squeeze(-1)
-        
         # print('xttttt:',xt.shape)
         # print(xt.size(0),xt.size(1)*xt.size(2))
         xt = xt.contiguous().view(xt.size(0),-1)

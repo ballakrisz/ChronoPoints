@@ -12,8 +12,10 @@ batch_size=16
 learning_rate=0.001
 # model_path=log_model_part_seg_step1/model-1.ckpt
 model_path=None
-log_dir=log_${model}_${num_frame}
+log_dir=output/log_${model}_${num_frame}
 
+# Ensure directory exists
+mkdir -p "$(dirname "$log_dir")"
 
 python3 action_cls/train.py \
     --gpu $gpu \
