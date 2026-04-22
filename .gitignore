@@ -1,3 +1,4 @@
 dataset/chrono_points_cls_benchmark/
 __pycache__/
 *.pyc
+output/

@@ -37,7 +37,7 @@ RUN groupadd -g 999 appuser && \
 # set working directory
 WORKDIR /home/appuser
 
-# install basic dependencies for everything (useful for development, may be stripped for deployment)
+# install basic dependencies for everything 
 USER root
 RUN apt-get update && \
     DEBIAN_FRONTEND=noniteractive \
@@ -55,6 +55,15 @@ RUN apt-get update && \
     unzip \
     cmake \
     python3-dev
+
+# Install Python dependencies
+RUN pip install \
+    scikit-learn \
+    matplotlib \
+    tensorboard 
+
+# add tensorboard to PATH so you can run it with: tensorboard --logidr [logdir] --port [6006 or whatever you want]
+RUN export PATH=$HOME/.local/bin:$PATH
 
 # start as appuser
 USER appuser
