@@ -15,8 +15,7 @@ from typing import Dict, Tuple
 from time import time
 from multiprocessing import Pool, cpu_count
 from data_utils import generate_unique_key, json_item_to_pcl_sequence, json_item_to_pcl_frame
-from sampling import get_sampling_strategies, get_padding_strategies
-from transform import rotate_sequence, scale_sequence, shift_sequence, jitter_sequence
+from transform import rotate_sequence, scale_sequence, shift_sequence, jitter_sequence, anisotropic_scale_sequence, temporal_warp_sequence
 import torch
 from collections import Counter
 
@@ -272,11 +271,28 @@ class PointSeriesDataset(Dataset):
         """        
         point_seq_np = dict_item['point_clouds']
         if self.augment:
-            # Apply augmentations consistently across the sequence
-            point_seq_np = rotate_sequence(point_seq_np)
-            point_seq_np = shift_sequence(point_seq_np)
-            point_seq_np = scale_sequence(point_seq_np)
-            point_seq_np = jitter_sequence(point_seq_np)
+            if np.random.rand() < 0.7:
+                point_seq_np = rotate_sequence(point_seq_np)
+
+            if np.random.rand() < 0.5:
+                point_seq_np = anisotropic_scale_sequence(point_seq_np)
+
+            if np.random.rand() < 0.5:
+                point_seq_np = jitter_sequence(point_seq_np)
+
+            if np.random.rand() < 0.3:
+                point_seq_np = temporal_warp_sequence(point_seq_np)
+
+
+                
+                
+        # old:
+        # if self.augment: 
+        #     # Apply augmentations consistently across the sequence 
+        #     point_seq_np = rotate_sequence(point_seq_np) 
+        #     point_seq_np = shift_sequence(point_seq_np) 
+        #     point_seq_np = scale_sequence(point_seq_np) 
+        #     point_seq_np = jitter_sequence(point_seq_np)
         
         """
         Return type:

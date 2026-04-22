@@ -367,18 +367,18 @@ class PointSeriesDataset(Dataset):
             e.g., worker_init_fn=lambda worker_id: np.random.seed(42 + worker_id) --> yeah, well this does not work... you need to seed them based on the global RNG state. 
         """        
         point_seq_np = dict_item['point_clouds']
-        # if self.augment:
-        #     if np.random.rand() < 0.7:
-        #         point_seq_np = rotate_sequence(point_seq_np)
+        if self.augment:
+            if np.random.rand() < 0.7:
+                point_seq_np = rotate_sequence(point_seq_np)
 
-        #     if np.random.rand() < 0.5:
-        #         point_seq_np = anisotropic_scale_sequence(point_seq_np)
+            if np.random.rand() < 0.5:
+                point_seq_np = anisotropic_scale_sequence(point_seq_np)
 
-        #     if np.random.rand() < 0.5:
-        #         point_seq_np = jitter_sequence(point_seq_np)
+            if np.random.rand() < 0.5:
+                point_seq_np = jitter_sequence(point_seq_np)
 
-        #     if np.random.rand() < 0.3:
-        #         point_seq_np = temporal_warp_sequence(point_seq_np)
+            if np.random.rand() < 0.3:
+                point_seq_np = temporal_warp_sequence(point_seq_np)
 
 
                 
