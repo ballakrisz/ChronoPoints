@@ -9,11 +9,12 @@ We do not claim ownership of the original work. Minor modifications may have bee
 
 If you use this model, please cite the original paper:
 ```
-@inproceedings{liu2019meteornet, 
-  title={MeteorNet: Deep Learning on Dynamic 3D Point Cloud Sequences}, 
-  author={Xingyu Liu and Mengyuan Yan and Jeannette Bohg}, 
-  booktitle={ICCV}, 
-  year={2019} 
+@InProceedings{Liu_2019_ICCV,
+  author = {Liu, Xingyu and Yan, Mengyuan and Bohg, Jeannette},
+  title = {MeteorNet: Deep Learning on Dynamic 3D Point Cloud Sequences},
+  booktitle = {Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV)},
+  month = {October},
+  year = {2019}
 }
 ```
 
