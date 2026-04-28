@@ -10,11 +10,13 @@ We do not claim ownership of the original work. Minor modifications may have bee
 If you use this model, please cite the original paper:
 
 ```
-@article{liu2024mamba4d,
-  title={Mamba4d: Efficient long-sequence point cloud video understanding with disentangled spatial-temporal state space models},
-  author={Liu, Jiuming and Han, Jinru and Liu, Lihao and Aviles-Rivero, Angelica I and Jiang, Chaokang and Liu, Zhe and Wang, Hesheng},
-  journal={arXiv preprint arXiv:2405.14338},
-  year={2024}
+@InProceedings{Liu_2025_CVPR,
+    author    = {Liu, Jiuming and Han, Jinru and Liu, Lihao and Aviles-Rivero, Angelica I. and Jiang, Chaokang and Liu, Zhe and Wang, Hesheng},
+    title     = {Mamba4D: Efficient 4D Point Cloud Video Understanding with Disentangled Spatial-Temporal State Space Models},
+    booktitle = {Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)},
+    month     = {June},
+    year      = {2025},
+    pages     = {17626-17636}
 }
 ```
 
