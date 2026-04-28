@@ -153,7 +153,7 @@ def evaluate(classifier, dataloader, loss_fn, device):
     total_samples = 0
 
     # Per-class stats
-    num_classes = 5
+    num_classes = classifier.classifier[-1].out_features
     class_correct = torch.zeros(num_classes, dtype=torch.long)
     class_total = torch.zeros(num_classes, dtype=torch.long)
 

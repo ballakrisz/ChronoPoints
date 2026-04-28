@@ -74,9 +74,13 @@ def evaluate(classifier, dataloader, device, logger, label_decoder=None):
                 if mask_c.any():
                     class_correct[c_true] += (preds[mask_c] == c_true).sum().item()
                     class_total[c_true] += mask_c.sum().item()
+
                     for c_pred in range(num_classes):
                         confusion_counts[c_true, c_pred] += (preds[mask_c] == c_pred).sum().item()
 
+    # =========================
+    # Accuracy
+    # =========================
     overall_acc = total_correct / total_samples
     class_acc = class_correct.float() / class_total.clamp(min=1)
     mean_acc = class_acc.mean().item()
@@ -84,7 +88,34 @@ def evaluate(classifier, dataloader, device, logger, label_decoder=None):
     avg_conf_correct = conf_correct_sum / max(correct_count, 1)
     avg_conf_incorrect = conf_incorrect_sum / max(incorrect_count, 1)
 
-    # logger.info("\n")
+    # =========================
+    # Precision / Recall / F1
+    # =========================
+    tp = confusion_counts.diag()
+    fp = confusion_counts.sum(dim=0) - tp
+    fn = confusion_counts.sum(dim=1) - tp
+
+    precision = tp.float() / (tp + fp).clamp(min=1)
+    recall = tp.float() / (tp + fn).clamp(min=1)
+    f1 = 2 * precision * recall / (precision + recall).clamp(min=1e-8)
+
+    # Macro
+    macro_precision = precision.mean().item()
+    macro_recall = recall.mean().item()
+    macro_f1 = f1.mean().item()
+
+    # Micro
+    tp_sum = tp.sum().float()
+    fp_sum = fp.sum().float()
+    fn_sum = fn.sum().float()
+
+    micro_precision = tp_sum / (tp_sum + fp_sum).clamp(min=1)
+    micro_recall = tp_sum / (tp_sum + fn_sum).clamp(min=1)
+    micro_f1 = 2 * micro_precision * micro_recall / (micro_precision + micro_recall).clamp(min=1e-8)
+
+    # =========================
+    # Logging
+    # =========================
     logger.info("Model Confidence Summary")
     logger.info("----------------------------------------------------")
     logger.info(f"Correct predictions:   {correct_count:6d} | Avg confidence: {avg_conf_correct:.4f}")
@@ -101,7 +132,34 @@ def evaluate(classifier, dataloader, device, logger, label_decoder=None):
         class_name = label_decoder[c] if label_decoder else f"Class {c}"
         acc_c = correct_c / max(total_c, 1)
 
-        logger.info(f"{class_name:15s} | Total: {total_c:5d} | Correct: {correct_c:5d} | Incorrect: {incorrect_c:5d} | Acc: {acc_c:.3f}")
+        logger.info(
+            f"{class_name:15s} | Total: {total_c:5d} | "
+            f"Correct: {correct_c:5d} | Incorrect: {incorrect_c:5d} | Acc: {acc_c:.3f}"
+        )
+    logger.info("----------------------------------------------------\n")
+
+    logger.info("Per-Class Precision / Recall / F1:")
+    logger.info("----------------------------------------------------")
+    for c in range(num_classes):
+        class_name = label_decoder[c] if label_decoder else f"Class {c}"
+        logger.info(
+            f"{class_name:15s} | "
+            f"P: {precision[c]:.3f} | R: {recall[c]:.3f} | F1: {f1[c]:.3f}"
+        )
+    logger.info("----------------------------------------------------\n")
+
+    logger.info("Averaged Metrics:")
+    logger.info("----------------------------------------------------")
+    logger.info(f"Overall Accuracy: {overall_acc:.4f}")
+    logger.info(f"Mean Accuracy:    {mean_acc:.4f}")
+    logger.info("")
+    logger.info(f"Macro Precision:  {macro_precision:.4f}")
+    logger.info(f"Macro Recall:     {macro_recall:.4f}")
+    logger.info(f"Macro F1:         {macro_f1:.4f}")
+    logger.info("")
+    logger.info(f"Micro Precision:  {micro_precision:.4f}")
+    logger.info(f"Micro Recall:     {micro_recall:.4f}")
+    logger.info(f"Micro F1:         {micro_f1:.4f}")
     logger.info("----------------------------------------------------\n")
 
     logger.info("Prediction Distribution per True Class:")
@@ -120,7 +178,6 @@ def evaluate(classifier, dataloader, device, logger, label_decoder=None):
     logger.info("----------------------------------------------------\n")
 
     return overall_acc, mean_acc
-
 
 # =========================
 # Args
@@ -212,7 +269,7 @@ def main():
 
     test_dataloader = torch.utils.data.DataLoader(
         test_dataset,
-        batch_size=train_args['batch_size'],
+        batch_size=16,
         shuffle=False,
         num_workers=train_args['num_workers']
     )

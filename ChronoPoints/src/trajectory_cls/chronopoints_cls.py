@@ -418,7 +418,7 @@ class SpatioTemporalEncoder(nn.Module):
     def __init__(self, emb_dim=128, num_frames=12):
         super().__init__()
 
-        base_radius = torch.linspace(0.5, 0.6, num_frames)
+        base_radius = torch.linspace(0.2, 0.6, num_frames)
 
         # ---- ONLY ONE ST LAYER ----
         self.sa = SpatioTemporalLayer(
