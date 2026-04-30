@@ -191,31 +191,59 @@ def main(args=None):
                 conf_mat[gt, pred] += 1.0
 
 
-    # ===== Metrics =====
-    OA = conf_mat.trace() / conf_mat.sum()
+        confusion_counts = torch.tensor(conf_mat)
 
-    class_acc = []
-    for i in range(opt.Num_Class):
-        if conf_mat[i].sum() == 0:
-            class_acc.append(0)
-        else:
-            class_acc.append(conf_mat[i, i] / conf_mat[i].sum())
+        tp = confusion_counts.diag()
+        fp = confusion_counts.sum(dim=0) - tp
+        fn = confusion_counts.sum(dim=1) - tp
 
-    mAcc = np.mean(class_acc)
+        # Per-class metrics
+        precision = tp.float() / (tp + fp).clamp(min=1)
+        recall = tp.float() / (tp + fn).clamp(min=1)
+        f1 = 2 * precision * recall / (precision + recall).clamp(min=1e-8)
 
+        # Macro
+        macro_precision = precision.mean().item()
+        macro_recall = recall.mean().item()
+        macro_f1 = f1.mean().item()
 
-    print(
-        '[TEST]: OA={:.2%} mAcc={:.2%}'.format(
-            OA, mAcc
-        )
-    )
+        # Micro
+        tp_sum = tp.sum().float()
+        fp_sum = fp.sum().float()
+        fn_sum = fn.sum().float()
 
-    logging.info(
-        '[TEST]: OA={:.2%} mAcc={:.2%}'.format(
-            OA, mAcc
-        )
-    )
-        #torch.save(netR.module.state_dict(), '%s/pointnet_para_%d.pth' % (opt.save_root_dir, epoch))
+        micro_precision = tp_sum / (tp_sum + fp_sum).clamp(min=1)
+        micro_recall = tp_sum / (tp_sum + fn_sum).clamp(min=1)
+        micro_f1 = 2 * micro_precision * micro_recall / (micro_precision + micro_recall).clamp(min=1e-8)
+
+        # Accuracy
+        overall_acc = tp_sum / confusion_counts.sum()
+        class_acc = tp.float() / confusion_counts.sum(dim=1).clamp(min=1)
+        mean_acc = class_acc.mean().item()
+        
+        logging.info("Per-Class Precision / Recall / F1:")
+        logging.info("----------------------------------------------------")
+        for c in range(opt.Num_Class):
+            logging.info(
+                f"Class {c:3d} | "
+                f"P: {precision[c]:.3f} | R: {recall[c]:.3f} | F1: {f1[c]:.3f}"
+            )
+        logging.info("----------------------------------------------------\n")
+
+        logging.info("Averaged Metrics:")
+        logging.info("----------------------------------------------------")
+        logging.info(f"Overall Accuracy: {overall_acc:.4f}")
+        logging.info(f"Mean Accuracy:    {mean_acc:.4f}")
+        logging.info("")
+        logging.info(f"Macro Precision:  {macro_precision:.4f}")
+        logging.info(f"Macro Recall:     {macro_recall:.4f}")
+        logging.info(f"Macro F1:         {macro_f1:.4f}")
+        logging.info("")
+        logging.info(f"Micro Precision:  {micro_precision:.4f}")
+        logging.info(f"Micro Recall:     {micro_recall:.4f}")
+        logging.info(f"Micro F1:         {micro_f1:.4f}")
+        logging.info("----------------------------------------------------\n")
+
 if __name__ == '__main__':
     main()
 

@@ -223,9 +223,6 @@ def eval_one_epoch(sess, ops):
     global EPOCH_CNT
     is_training = False
 
-    # log_string('---- EPOCH %03d EVALUATION ----'%(EPOCH_CNT))
-
-    # Make sure batch data is of same size
     cur_batch_data = np.zeros((BATCH_SIZE, NUM_POINT*NUM_FRAME, 3))
     cur_batch_label = np.zeros((BATCH_SIZE), dtype=np.int32)
     num_batches = (len(TEST_DATASET)-1) // BATCH_SIZE + 1
@@ -237,7 +234,10 @@ def eval_one_epoch(sess, ops):
     per_class_correct = np.zeros(NUM_CLASSES)
     per_class_seen = np.zeros(NUM_CLASSES)
 
-    # For majority-vote sequence accuracy
+    # 🔥 NEW: confusion matrix
+    confusion_counts = np.zeros((NUM_CLASSES, NUM_CLASSES), dtype=np.int64)
+
+    # Sequence voting
     per_seq_vote = {}
     per_seq_label = {}
 
@@ -277,28 +277,29 @@ def eval_one_epoch(sess, ops):
             else:
                 per_seq_vote[seq_id] += prob
 
-        # ======== Compute sample-level accuracy ========
+        # ===== Sample-level =====
         pred_classes = np.argmax(pred_val, axis=1)
-        correct = np.sum(pred_classes[:bsize] == batch_label[:bsize])
 
-        total_correct += correct
-        total_seen += bsize
+        for i in range(bsize):
+            true = batch_label[i]
+            pred = pred_classes[i]
+
+            total_seen += 1
+            total_correct += (pred == true)
+
+            per_class_seen[true] += 1
+            per_class_correct[true] += (pred == true)
+
+            # 🔥 NEW: confusion matrix update
+            confusion_counts[true, pred] += 1
+
         total_loss += loss_val
 
-        # Per-class tracking
-        for i in range(bsize):
-            lbl = batch_label[i]
-            per_class_seen[lbl] += 1
-            per_class_correct[lbl] += (pred_classes[i] == lbl)
-
-    # =====================================================
-    #      🔥 Compute Evaluation Metrics (new version)
-    # =====================================================
-
-    # ---------- Overall Accuracy ----------
+    # =========================
+    # Accuracy
+    # =========================
     overall_accuracy = total_correct / float(total_seen)
 
-    # ---------- Mean Class Accuracy ----------
     class_acc = np.divide(
         per_class_correct,
         per_class_seen,
@@ -307,16 +308,49 @@ def eval_one_epoch(sess, ops):
     )
     mean_class_accuracy = np.mean(class_acc)
 
-    # ---------- Per-sequence accuracy ----------
-    seq_predictions = {k: np.argmax(v) for k, v in per_seq_vote.items()}
-    seq_correct = [seq_predictions[k] == per_seq_label[k] for k in seq_predictions]
+    # =========================
+    # Precision / Recall / F1
+    # =========================
+    tp = np.diag(confusion_counts)
+    fp = np.sum(confusion_counts, axis=0) - tp
+    fn = np.sum(confusion_counts, axis=1) - tp
+
+    precision = tp / np.maximum(tp + fp, 1)
+    recall = tp / np.maximum(tp + fn, 1)
+    f1 = 2 * precision * recall / np.maximum(precision + recall, 1e-8)
+
+    macro_precision = np.mean(precision)
+    macro_recall = np.mean(recall)
+    macro_f1 = np.mean(f1)
+
+    tp_sum = np.sum(tp)
+    fp_sum = np.sum(fp)
+    fn_sum = np.sum(fn)
+
+    micro_precision = tp_sum / max(tp_sum + fp_sum, 1)
+    micro_recall = tp_sum / max(tp_sum + fn_sum, 1)
+    micro_f1 = 2 * micro_precision * micro_recall / max(micro_precision + micro_recall, 1e-8)
+
+    # =========================
+    # Sequence metrics (unchanged)
+    # =========================
+    seq_predictions = {}
+    for k in per_seq_vote:
+        seq_predictions[k] = np.argmax(per_seq_vote[k])
+
+    seq_correct = []
+    for k in seq_predictions:
+        seq_correct.append(seq_predictions[k] == per_seq_label[k])
+
     seq_accuracy = np.mean(seq_correct)
 
-    # Per-sequence per-class accuracy
     per_seq_seen = np.zeros(NUM_CLASSES)
     per_seq_correct_class = np.zeros(NUM_CLASSES)
-    for sid, pred_cls in seq_predictions.items():
+
+    for sid in seq_predictions:
         lbl = per_seq_label[sid]
+        pred_cls = seq_predictions[sid]
+
         per_seq_seen[lbl] += 1
         per_seq_correct_class[lbl] += (pred_cls == lbl)
 
@@ -326,6 +360,47 @@ def eval_one_epoch(sess, ops):
         out=np.zeros_like(per_seq_correct_class, dtype=float),
         where=(per_seq_seen != 0)
     )
+
+    # =========================
+    # Logging (print)
+    # =========================
+    print("\n=== Evaluation Summary ===")
+    print("Overall Accuracy: {:.4f}".format(overall_accuracy))
+    print("Mean Accuracy:    {:.4f}".format(mean_class_accuracy))
+
+    print("\n--- Per-Class Accuracy ---")
+    for c in range(NUM_CLASSES):
+        print("Class {:2d} | Acc: {:.4f} | Seen: {:5d}".format(
+            c, class_acc[c], int(per_class_seen[c])))
+
+    print("\n--- Per-Class Precision / Recall / F1 ---")
+    for c in range(NUM_CLASSES):
+        print("Class {:2d} | P: {:.3f} | R: {:.3f} | F1: {:.3f}".format(
+            c, precision[c], recall[c], f1[c]))
+
+    print("\n--- Macro ---")
+    print("Precision: {:.4f}".format(macro_precision))
+    print("Recall:    {:.4f}".format(macro_recall))
+    print("F1:        {:.4f}".format(macro_f1))
+
+    print("\n--- Micro ---")
+    print("Precision: {:.4f}".format(micro_precision))
+    print("Recall:    {:.4f}".format(micro_recall))
+    print("F1:        {:.4f}".format(micro_f1))
+
+    print("\n--- Confusion Matrix ---")
+    print(confusion_counts)
+
+    print("\n--- Prediction Distribution per True Class ---")
+    for c_true in range(NUM_CLASSES):
+        print("Class {}:".format(c_true))
+        for c_pred in range(NUM_CLASSES):
+            count = confusion_counts[c_true, c_pred]
+            if count > 0:
+                print("   -> Pred {}: {}".format(c_pred, count))
+
+    print("\n--- Sequence Accuracy ---")
+    print("Seq OA: {:.4f}".format(seq_accuracy))
 
     EPOCH_CNT += 1
     return overall_accuracy, mean_class_accuracy, class_acc

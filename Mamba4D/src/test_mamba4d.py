@@ -27,15 +27,25 @@ FRAME_GAP_DICT = {
 }
 
 
-def evaluate(model, criterion, data_loader, device):
+def evaluate(model, criterion, data_loader, device, label_decoder=None):
     model.eval()
 
     num_classes = data_loader.dataset.num_types
 
-    class_correct = torch.zeros(num_classes, device=device)
-    class_count = torch.zeros(num_classes, device=device)
     total_correct = 0
     total_samples = 0
+
+    class_correct = torch.zeros(num_classes, device=device)
+    class_count = torch.zeros(num_classes, device=device)
+
+    confusion_counts = torch.zeros((num_classes, num_classes), device=device)
+
+    softmax = torch.nn.Softmax(dim=1)
+
+    conf_correct_sum = 0.0
+    conf_incorrect_sum = 0.0
+    correct_count = 0
+    incorrect_count = 0
 
     with torch.no_grad():
         for clip, target, _ in data_loader:
@@ -43,34 +53,105 @@ def evaluate(model, criterion, data_loader, device):
             clip = clip.to(device, non_blocking=True)
             target = target.to(device, non_blocking=True)
 
-            output = model(clip)
+            logits = model(clip)
 
-            pred = output.argmax(dim=1)
-            correct = (pred == target)
+            preds = logits.argmax(dim=1)
+            probs = softmax(logits)
+            confs = probs.max(dim=1).values
+
+            correct = (preds == target)
+
+            conf_correct_sum += confs[correct].sum().item()
+            conf_incorrect_sum += confs[~correct].sum().item()
+
+            correct_count += correct.sum().item()
+            incorrect_count += (~correct).sum().item()
 
             total_correct += correct.sum().item()
             total_samples += target.size(0)
 
-            # per-class stats
-            for c in range(num_classes):
-                mask = (target == c)
-                class_count[c] += mask.sum()
-                class_correct[c] += (correct & mask).sum()
+            for c_true in range(num_classes):
+                mask = (target == c_true)
+                if mask.any():
+                    class_count[c_true] += mask.sum()
+                    class_correct[c_true] += (preds[mask] == c_true).sum()
 
-            # running metrics
-            OA = total_correct / max(total_samples, 1)
-            class_acc = class_correct / (class_count + 1e-6)
-            mAcc = class_acc.mean().item()
+                    for c_pred in range(num_classes):
+                        confusion_counts[c_true, c_pred] += (preds[mask] == c_pred).sum()
 
+    # =========================
+    # Accuracy
+    # =========================
+    overall_acc = total_correct / max(total_samples, 1)
+    class_acc = class_correct / (class_count + 1e-6)
+    mean_acc = class_acc.mean().item()
 
-    final_OA = total_correct / max(total_samples, 1)
-    final_class_acc = class_correct / (class_count + 1e-6)
-    final_mAcc = final_class_acc.mean().item()
+    avg_conf_correct = conf_correct_sum / max(correct_count, 1)
+    avg_conf_incorrect = conf_incorrect_sum / max(incorrect_count, 1)
 
-    print(f' * Eval OA {final_OA:.4f} mAcc {final_mAcc:.4f}')
-    logging.getLogger().info(f' * Eval OA {final_OA:.4f} mAcc {final_mAcc:.4f}')
+    # =========================
+    # Precision / Recall / F1
+    # =========================
+    tp = confusion_counts.diag()
+    fp = confusion_counts.sum(dim=0) - tp
+    fn = confusion_counts.sum(dim=1) - tp
 
-    return final_mAcc
+    precision = tp / (tp + fp).clamp(min=1)
+    recall = tp / (tp + fn).clamp(min=1)
+    f1 = 2 * precision * recall / (precision + recall).clamp(min=1e-8)
+
+    macro_precision = precision.mean().item()
+    macro_recall = recall.mean().item()
+    macro_f1 = f1.mean().item()
+
+    tp_sum = tp.sum()
+    fp_sum = fp.sum()
+    fn_sum = fn.sum()
+
+    micro_precision = tp_sum / (tp_sum + fp_sum).clamp(min=1)
+    micro_recall = tp_sum / (tp_sum + fn_sum).clamp(min=1)
+    micro_f1 = 2 * micro_precision * micro_recall / (micro_precision + micro_recall).clamp(min=1e-8)
+
+    # =========================
+    # PRINT EVERYTHING
+    # =========================
+    print("\n================ EVALUATION ================")
+    print(f"Overall Accuracy (OA): {overall_acc:.4f}")
+    print(f"Mean Accuracy (mAcc):  {mean_acc:.4f}")
+
+    print("\n--- Confidence ---")
+    print(f"Correct:   {correct_count} | Avg conf: {avg_conf_correct:.4f}")
+    print(f"Incorrect: {incorrect_count} | Avg conf: {avg_conf_incorrect:.4f}")
+
+    print("\n--- Per-Class Accuracy ---")
+    for c in range(num_classes):
+        total_c = int(class_count[c].item())
+        correct_c = int(class_correct[c].item())
+        acc_c = correct_c / max(total_c, 1)
+
+        name = label_decoder[c] if label_decoder else f"Class {c}"
+        print(f"{name:15s} | Total: {total_c:5d} | Correct: {correct_c:5d} | Acc: {acc_c:.3f}")
+
+    print("\n--- Per-Class Precision / Recall / F1 ---")
+    for c in range(num_classes):
+        name = label_decoder[c] if label_decoder else f"Class {c}"
+        print(f"{name:15s} | P: {precision[c]:.3f} | R: {recall[c]:.3f} | F1: {f1[c]:.3f}")
+
+    print("\n--- Averages ---")
+    print(f"Macro Precision: {macro_precision:.4f}")
+    print(f"Macro Recall:    {macro_recall:.4f}")
+    print(f"Macro F1:        {macro_f1:.4f}")
+    print("")
+    print(f"Micro Precision: {micro_precision:.4f}")
+    print(f"Micro Recall:    {micro_recall:.4f}")
+    print(f"Micro F1:        {micro_f1:.4f}")
+
+    print("\n--- Confusion Matrix (counts) ---")
+    print(confusion_counts)
+
+    print("==========================================\n")
+
+    return overall_acc, mean_acc
 
 
 def main(ckpt):
