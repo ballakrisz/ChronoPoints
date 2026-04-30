@@ -64,8 +64,8 @@ MODEL = importlib.import_module(FLAGS.model) # import network module
 MODEL_FILE = os.path.join(FLAGS.model+'.py')
 LOG_DIR = FLAGS.log_dir
 if not os.path.exists(LOG_DIR): os.mkdir(LOG_DIR)
-os.system('cp %s %s' % (MODEL_FILE, LOG_DIR)) # bkp of model def
-os.system('cp train.py %s' % (LOG_DIR)) # bkp of train procedure
+os.system('cp %s %s' % ("action_cls/"+MODEL_FILE, LOG_DIR)) # bkp of model def
+os.system('cp action_cls/train.py %s' % (LOG_DIR)) # bkp of train procedure
 os.system('cp %s %s' % (COMMAND_FILE, LOG_DIR)) # bkp of train procedure
 LOG_FOUT = open(os.path.join(LOG_DIR, 'log_train.txt'), 'w')
 LOG_FOUT.write(str(FLAGS)+'\n')
