@@ -68,7 +68,8 @@ RUN pip install \
     opencv-python \
     open3d \
     timm \
-    termcolor
+    termcolor \
+    calflops
 
 # install knn CUDA
 RUN pip install --upgrade https://github.com/unlimblue/KNN_CUDA/releases/download/0.2/KNN_CUDA-0.2-py3-none-any.whl && \
