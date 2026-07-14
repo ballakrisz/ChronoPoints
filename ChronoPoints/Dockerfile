@@ -54,16 +54,28 @@ RUN apt-get update && \
     net-tools \
     unzip \
     cmake \
-    python3-dev
+    python3-dev \
+    chromium-browser
 
 # Install Python dependencies
 RUN pip install \
     scikit-learn \
     matplotlib \
-    tensorboard 
+    tensorboard \
+    calflops \
+    transformers \
+    pandas \
+    optuna \
+    optuna-dashboard \
+    kaleido \
+    plotly
+
+# install PointNet++ pytorch cuda ops (needed for FPS sampling and sptatiotemporal grouping)
+RUN git clone https://github.com/erikwijmans/Pointnet2_PyTorch.git
+RUN pip install ./Pointnet2_PyTorch/pointnet2_ops_lib
 
 # add tensorboard to PATH so you can run it with: tensorboard --logidr [logdir] --port [6006 or whatever you want]
-RUN export PATH=$HOME/.local/bin:$PATH
+ENV PATH="/home/appuser/.local/bin:${PATH}"
 
 # start as appuser
 USER appuser
