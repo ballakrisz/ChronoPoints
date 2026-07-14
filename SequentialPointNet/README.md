@@ -25,7 +25,6 @@ If you use this model, please cite the original paper:
 ## Installation
 
 Build the Docker image by running:  
-(due to having to build `mamba-ssm` from source, this step takes approximately 20-30 minutes)
 
 ```bash
 cd SequentialPointNet
