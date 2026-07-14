@@ -13,8 +13,17 @@ except ImportError:
 from timm.models.layers import DropPath
 
 from misc import *
-from knn_cuda import KNN
+# from knn_cuda import KNN
 
+# The repo that contained the code for knn_cuda was deleted... so we "implement" it ourself.
+# NOTE: The inference and complexity tests reported in the ChronoPoints article were attained with the original CUDA  
+#       accelerated KNN operation, therefore you might get slightly worse results with the below implementation
+def knn(query, reference, k):
+    # query: (B, G, 3)
+    # reference: (B, N, 3)
+    dist = torch.cdist(query, reference)      # (B, G, N)
+    dists, idx = dist.topk(k, dim=-1, largest=False)
+    return dists, idx
 
 class Block(nn.Module):
     def __init__(
@@ -82,7 +91,7 @@ class Group(nn.Module):  # FPS + KNN
         super().__init__()
         self.num_group = num_group
         self.group_size = group_size
-        self.knn = KNN(k=self.group_size, transpose_mode=True)
+        # self.knn = KNN(k=self.group_size, transpose_mode=True)
 
     def forward(self, xyz):
         '''
@@ -97,7 +106,7 @@ class Group(nn.Module):  # FPS + KNN
         # knn to get the neighborhood
         # import ipdb; ipdb.set_trace()
         # idx = knn_query(xyz, center, self.group_size)  # B G M
-        _, idx = self.knn(xyz, center)  # B G M
+        _, idx = knn(center, xyz, self.group_size)
         assert idx.size(1) == self.num_group
         assert idx.size(2) == self.group_size
         idx_base = torch.arange(0, batch_size, device=xyz.device).view(-1, 1, 1) * num_points

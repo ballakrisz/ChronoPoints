@@ -71,9 +71,9 @@ RUN pip install \
     termcolor \
     calflops
 
-# install knn CUDA
-RUN pip install --upgrade https://github.com/unlimblue/KNN_CUDA/releases/download/0.2/KNN_CUDA-0.2-py3-none-any.whl && \
-    chown -R appuser:appuser /opt/conda/lib/python3.11/site-packages/knn_cuda
+# # install knn CUDA
+# RUN pip install --upgrade https://github.com/unlimblue/KNN_CUDA/releases/download/0.2/KNN_CUDA-0.2-py3-none-any.whl && \
+#     chown -R appuser:appuser /opt/conda/lib/python3.11/site-packages/knn_cuda
 
 # install PointNet++ pytorch cuda ops
 RUN git clone https://github.com/erikwijmans/Pointnet2_PyTorch.git
@@ -95,7 +95,7 @@ ENV TORCH_CUDA_ARCH_LIST=6.1
 # If your CC is 10.3, then your line should look like this:
     # print indent "cc_flag.append(\"arch=compute_103,code=sm_103\")";\
 
-RUN git clone https://github.com/state-spaces/mamba.git && \
+RUN git clone --branch v1.2.0 --depth 1 https://github.com/state-spaces/mamba.git && \
     cd mamba && \
     awk '{\
         if (!done && $0 ~ /cc_flag.append\("-gencode"\)/) {\
