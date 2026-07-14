@@ -7,6 +7,7 @@ import torch
 from datetime import datetime
 import shutil
 import argparse
+from torchinfo import summary
 
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__))) # Add the current file's directory to sys.path
@@ -77,7 +78,7 @@ def seed_worker(worker_id):
     np.random.seed(worker_seed)
     random.seed(worker_seed)
 
-def train_one_epoch(classifier, dataloader, cls_loss, contrastive_loss,contrastive_lambda, optimizer, scheduler, device, epoch):
+def train_one_epoch(classifier, dataloader, cls_loss, contrastive_loss,contrastive_lambda, optimizer, scheduler, device, epoch, has_pbar=True):
     classifier.train()
     total_loss = 0.0
     total_correct = 0
@@ -87,10 +88,17 @@ def train_one_epoch(classifier, dataloader, cls_loss, contrastive_loss,contrasti
     num_classes = classifier.classifier[-1].out_features
     class_correct = torch.zeros(num_classes, dtype=torch.long)
     class_total = torch.zeros(num_classes, dtype=torch.long)
+    
+    iterator = enumerate(dataloader)
+    
+    if has_pbar:
+        iterator = tqdm(
+            iterator,
+            total=len(dataloader),
+            desc=f"Epoch {epoch}"
+        )
 
-    for batch_id, (pcl_seq, masks, velocities, stamps, class_labels, type_labels) in tqdm(
-        enumerate(dataloader), total=len(dataloader), desc=f"Epoch {epoch}"
-    ):
+    for batch_id, (pcl_seq, masks, velocities, stamps, class_labels, type_labels) in iterator:
         pcl_sequence = pcl_seq.to(device, non_blocking=True)
         mask = masks.to(device, non_blocking=True)
         velocities = velocities.to(device, non_blocking=True)
@@ -104,12 +112,7 @@ def train_one_epoch(classifier, dataloader, cls_loss, contrastive_loss,contrasti
         loss_cls = cls_loss(logits, labels)
         loss_contrastive = contrastive_loss(p_dist=p_dist, p_traj=p_traj, p_spatio=p_spatio)
         
-        # loss_supcon_dist = sup_con_loss(z_distortion, labels)
-        # loss_supcon_traj = sup_con_loss(z_trajectory, labels)
-        # loss_cross_view = cross_view_loss(z_distortion, z_trajectory, labels)
-
         # combined objective
-
         loss = loss_cls + contrastive_lambda * loss_contrastive
 
 
@@ -388,6 +391,34 @@ def main():
         poly_order=3
     )
     classifier.to(device)
+    
+    # Example dimensions
+    B = args.batch_size   # batch size
+    T = num_frame   # temporal frames
+    N = 512 # points per frame
+
+    # Dummy inputs
+    pts = torch.randn(B, T, N, 3).to(device)
+
+    # Boolean mask (True = valid point)
+    mask = torch.ones(B, T, N, dtype=torch.bool).to(device)
+
+    # Example velocities
+    velocities = torch.randn(B, T, 3).to(device)
+
+    model_summary = summary(
+        classifier,
+        input_data=(pts, mask, velocities),
+        col_names=(
+            "input_size",
+            "output_size",
+            "num_params",
+            "trainable"
+        ),
+        depth=5,
+        verbose=1
+    )
+    logger.info(f"MODEL SUMMARY\n{str(model_summary)}\n")
 
     # Loss
     cls_loss = torch.nn.CrossEntropyLoss()
