@@ -1,5 +1,5 @@
-# Title
-This repository contains the code for the paper [].
+# ChronoPoints
+This repository contains the code for the paper that introduced ChronoPoints [].
 
 ## Dataset
 Download the dataset from:  
