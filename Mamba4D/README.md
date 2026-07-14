@@ -29,7 +29,7 @@ To ensure compatibility, this repository builds `mamba-ssm` from source, which i
 ## Installation
 
 Build the Docker image by running:  
-(due to having to build `mamba-ssm` from source, this step takes approximately 20-30 minutes)
+(due to having to build `mamba-ssm` from source, this can take up to 20 minutes)
 
 ```bash
 cd Mamba4D
