@@ -10,6 +10,7 @@ import importlib
 import os
 import sys
 from pathlib import Path
+import time
 
 sys.path.append(str(Path(__file__).resolve().parents[1])) # Add the src directory to sys.path
 from data.dataset import PointSeriesDataset
@@ -98,6 +99,136 @@ TEST_DATASET = PointSeriesDataset(
 NUM_CLASSES = TEST_DATASET.num_types
 print("Number of classes: ", NUM_CLASSES)
 
+def compute_model_complexity_tf(
+    sess,
+    ops,
+    batch_data,
+    batch_label
+):
+    """
+    TensorFlow 1.x model complexity + inference benchmark
+    """
+
+    # ====================================================
+    # Parameters
+    # ====================================================
+
+    total_params = np.sum([
+        np.prod(v.shape.as_list())
+        for v in tf.trainable_variables()
+    ])
+
+    print("-------------------- SANITY CHECK --------------------")
+    print("Total trainable parameters: {:,}".format(total_params))
+    print("------------------------------------------------------")
+
+    # ====================================================
+    # FLOPs
+    # ====================================================
+
+    try:
+
+        from tensorflow.python.profiler import model_analyzer
+        from tensorflow.python.profiler.option_builder import ProfileOptionBuilder
+
+        flops = tf.profiler.profile(
+            tf.get_default_graph(),
+            options=tf.profiler.ProfileOptionBuilder.float_operation()
+        )
+
+        total_flops = flops.total_float_ops
+
+        print("\n---------------- MODEL COMPLEXITY ----------------")
+        print("FLOPs:  {:.4f} GFLOPs".format(total_flops / 1e9))
+
+        # MACs ≈ FLOPs / 2
+        print("MACs:   {:.4f} GMACs".format(total_flops / 2e9))
+
+        print("Params: {:.4f} M".format(total_params / 1e6))
+        print("--------------------------------------------------")
+
+    except Exception as e:
+
+        print("FLOP computation failed:")
+        print(e)
+
+    # ====================================================
+    # Benchmark
+    # ====================================================
+
+    warmup_iters = 20
+    benchmark_iters = 100
+
+    print("\nWarming up GPU...")
+
+    feed_dict = {
+        ops['pointclouds_pl']: batch_data,
+        ops['labels_pl']: batch_label,
+        ops['is_training_pl']: False
+    }
+
+    # --------------------------------
+    # Warmup
+    # --------------------------------
+
+    for _ in range(warmup_iters):
+
+        sess.run(
+            ops['pred'],
+            feed_dict=feed_dict
+        )
+
+    # force sync
+    sess.run(tf.no_op())
+
+    # --------------------------------
+    # Benchmark
+    # --------------------------------
+
+    timings = []
+
+    for _ in range(benchmark_iters):
+
+        start = time.perf_counter()
+
+        sess.run(
+            ops['pred'],
+            feed_dict=feed_dict
+        )
+
+        # force GPU sync
+        sess.run(tf.no_op())
+
+        end = time.perf_counter()
+
+        timings.append(end - start)
+
+    timings = np.array(timings)
+
+    # ====================================================
+    # Statistics
+    # ====================================================
+
+    mean_ms = timings.mean() * 1000
+    std_ms = timings.std() * 1000
+    median_ms = np.median(timings) * 1000
+    min_ms = timings.min() * 1000
+    max_ms = timings.max() * 1000
+
+    fps = 1000.0 / mean_ms
+
+    print("\n---------------- INFERENCE SPEED ----------------")
+    print("Input shape:      {}".format(batch_data.shape))
+    print("Warmup iterations:{}".format(warmup_iters))
+    print("Benchmark runs:   {}".format(benchmark_iters))
+    print("")
+    print("Mean latency:     {:.3f} ms".format(mean_ms))
+    print("Median latency:   {:.3f} ms".format(median_ms))
+    print("Std latency:      {:.3f} ms".format(std_ms))
+    print("Min latency:      {:.3f} ms".format(min_ms))
+    print("Max latency:      {:.3f} ms".format(max_ms))
+    print("Throughput:       {:.2f} FPS".format(fps))
+    print("--------------------------------------------------\n")
 
 def get_learning_rate(batch):
     learning_rate = tf.train.exponential_decay(
@@ -120,6 +251,13 @@ def get_bn_decay(batch):
     return bn_decay
 
 def test():
+    print("")
+    print("!!! =================================================== IMPORTANT ==================================================== !!!")
+    print("!!!     Because TensorFlow 1.x uses static graph construction, benchmark latency depends on the global BATCH_SIZE.     !!!")
+    print("!!!    Unlike PyTorch, we cannot simply extract a single sample from a larger batch and benchmark only that sample.    !!!")
+    print("!!! For fair single-sample benchmarking, BATCH_SIZE must be set to 1 in src/command_test.sh before building the graph. !!!")
+    print("!!! =================================================== IMPORTANT ==================================================== !!!")
+    print("")
     with tf.Graph().as_default():
         with tf.device('/gpu:'+str(GPU_INDEX)):
             pointclouds_pl, labels_pl = MODEL.placeholder_inputs(BATCH_SIZE, NUM_POINT, NUM_FRAME)
@@ -195,6 +333,22 @@ def test():
                'step': batch,
                'end_points': end_points}
         
+        # ====================================================
+        # Complexity benchmark
+        # ====================================================
+
+        sample_data, sample_label, _ = get_batch(
+            TEST_DATASET,
+            0,
+            BATCH_SIZE
+        )
+
+        compute_model_complexity_tf(
+            sess,
+            ops,
+            sample_data,
+            sample_label
+        )
 
         val_oa, val_macc, val_class_acc = eval_one_epoch(sess, ops)
         print("Final Eval: OA={:.4f}, mAcc={:.4f}".format(
@@ -237,6 +391,11 @@ def eval_one_epoch(sess, ops):
     # 🔥 NEW: confusion matrix
     confusion_counts = np.zeros((NUM_CLASSES, NUM_CLASSES), dtype=np.int64)
 
+    # =========================
+    # Inference timing
+    # =========================
+    total_inference_time = 0.0
+
     # Sequence voting
     per_seq_vote = {}
     per_seq_label = {}
@@ -258,10 +417,20 @@ def eval_one_epoch(sess, ops):
             ops['is_training_pl']: is_training
         }
 
+        # =========================
+        # Measure inference time
+        # =========================
+        start_time = time.perf_counter()
+
         summary, step, loss_val, pred_val = sess.run(
             [ops['merged'], ops['step'], ops['loss'], ops['pred']],
             feed_dict=feed_dict
         )
+
+        end_time = time.perf_counter()
+
+        batch_inference_time = end_time - start_time
+        total_inference_time += batch_inference_time
 
         # ----- softmax for sequence voting -----
         def softmax(arr):
@@ -271,6 +440,7 @@ def eval_one_epoch(sess, ops):
         for i in range(bsize):
             seq_id = batch_seqid[i]
             prob = softmax(pred_val[i])
+
             if seq_id not in per_seq_vote:
                 per_seq_vote[seq_id] = prob
                 per_seq_label[seq_id] = batch_label[i]
@@ -402,7 +572,10 @@ def eval_one_epoch(sess, ops):
     print("\n--- Sequence Accuracy ---")
     print("Seq OA: {:.4f}".format(seq_accuracy))
 
+    print("==========================================\n")
+
     EPOCH_CNT += 1
+
     return overall_accuracy, mean_class_accuracy, class_acc
 
 

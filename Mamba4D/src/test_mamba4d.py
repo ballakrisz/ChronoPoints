@@ -5,6 +5,9 @@ import torch
 import torch.utils.data
 from torch import nn
 import argparse
+import time
+from calflops import calculate_flops
+
 
 import logging
 
@@ -26,6 +29,112 @@ FRAME_GAP_DICT = {
     20 : 2,
 }
 
+def compute_model_complexity(model, dataloader, device):
+
+    model.eval()
+
+    # ====================================================
+    # Parameters
+    # ====================================================
+    total_params = sum(p.numel() for p in model.parameters())
+    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+
+    # ====================================================
+    # Get sample input
+    # ====================================================
+    clip, _, _ = next(iter(dataloader))
+
+    # use a SINGLE sample for latency benchmarking
+    single_clip = clip[:1].to(device)
+
+    # ====================================================
+    # FLOPs / MACs / Params
+    # ====================================================
+    flops, macs, params = calculate_flops(
+        model=model,
+        input_shape=tuple(single_clip.shape),
+        output_as_string=False,
+        output_precision=4
+    )
+
+    print("-------------------- SANITY CHECK --------------------")
+    print(f"Total parameters:     {total_params:,}")
+    print(f"Trainable parameters: {trainable_params:,}")
+    print("------------------------------------------------------")
+
+    print("\n---------------- MODEL COMPLEXITY ----------------")
+    print(f"FLOPs:  {flops / 1e9:.4f} GFLOPs")
+    print(f"MACs:   {macs / 1e9:.4f} GMACs")
+    print(f"Params: {params / 1e6:.4f} M")
+    print("--------------------------------------------------")
+
+    # ====================================================
+    # Robust inference benchmarking
+    # ====================================================
+
+    warmup_iters = 20
+    benchmark_iters = 100
+
+    print("\nWarming up GPU...")
+
+    with torch.no_grad():
+
+        # --------------------------------
+        # Warmup
+        # --------------------------------
+        for _ in range(warmup_iters):
+            _ = model(single_clip)
+
+        if device.type == "cuda":
+            torch.cuda.synchronize()
+
+        # --------------------------------
+        # Benchmark
+        # --------------------------------
+        timings = []
+
+        for _ in range(benchmark_iters):
+
+            if device.type == "cuda":
+                torch.cuda.synchronize()
+
+            start = time.perf_counter()
+
+            _ = model(single_clip)
+
+            if device.type == "cuda":
+                torch.cuda.synchronize()
+
+            end = time.perf_counter()
+
+            timings.append(end - start)
+
+    timings = np.array(timings)
+
+    # ====================================================
+    # Statistics
+    # ====================================================
+    mean_ms = timings.mean() * 1000
+    std_ms = timings.std() * 1000
+    median_ms = np.median(timings) * 1000
+    min_ms = timings.min() * 1000
+    max_ms = timings.max() * 1000
+
+    fps = 1000.0 / mean_ms
+
+    print("\n---------------- INFERENCE SPEED ----------------")
+    print(f"Input shape:      {tuple(single_clip.shape)}")
+    print(f"Warmup iterations:{warmup_iters}")
+    print(f"Benchmark runs:   {benchmark_iters}")
+    print("")
+    print(f"Mean latency:     {mean_ms:.3f} ms")
+    print(f"Median latency:   {median_ms:.3f} ms")
+    print(f"Std latency:      {std_ms:.3f} ms")
+    print(f"Min latency:      {min_ms:.3f} ms")
+    print(f"Max latency:      {max_ms:.3f} ms")
+    print(f"Throughput:       {fps:.2f} FPS")
+    print("--------------------------------------------------\n")
+    
 
 def evaluate(model, criterion, data_loader, device, label_decoder=None):
     model.eval()
@@ -47,13 +156,34 @@ def evaluate(model, criterion, data_loader, device, label_decoder=None):
     correct_count = 0
     incorrect_count = 0
 
+    # =========================
+    # Inference timing
+    # =========================
+    total_inference_time = 0.0
+
     with torch.no_grad():
         for clip, target, _ in data_loader:
 
             clip = clip.to(device, non_blocking=True)
             target = target.to(device, non_blocking=True)
 
+            # =========================
+            # Measure inference time
+            # =========================
+            if device.type == "cuda":
+                torch.cuda.synchronize()
+
+            start_time = time.perf_counter()
+
             logits = model(clip)
+
+            if device.type == "cuda":
+                torch.cuda.synchronize()
+
+            end_time = time.perf_counter()
+
+            batch_inference_time = end_time - start_time
+            total_inference_time += batch_inference_time
 
             preds = logits.argmax(dim=1)
             probs = softmax(logits)
@@ -90,6 +220,12 @@ def evaluate(model, criterion, data_loader, device, label_decoder=None):
     avg_conf_incorrect = conf_incorrect_sum / max(incorrect_count, 1)
 
     # =========================
+    # Average inference time
+    # =========================
+    avg_inference_time_per_sample = total_inference_time / max(total_samples, 1)
+    avg_inference_time_ms = avg_inference_time_per_sample * 1000.0
+
+    # =========================
     # Precision / Recall / F1
     # =========================
     tp = confusion_counts.diag()
@@ -118,6 +254,10 @@ def evaluate(model, criterion, data_loader, device, label_decoder=None):
     print("\n================ EVALUATION ================")
     print(f"Overall Accuracy (OA): {overall_acc:.4f}")
     print(f"Mean Accuracy (mAcc):  {mean_acc:.4f}")
+
+    print("\n--- Inference Performance ---")
+    print(f"Total inference time:         {total_inference_time:.4f} s")
+    print(f"Average inference per sample: {avg_inference_time_ms:.4f} ms")
 
     print("\n--- Confidence ---")
     print(f"Correct:   {correct_count} | Avg conf: {avg_conf_correct:.4f}")
@@ -212,10 +352,11 @@ def main(ckpt):
         model = nn.DataParallel(model)
 
     model.to(device)
-
-
+    
     model.load_state_dict(checkpoint['model'])
-
+    
+    compute_model_complexity(model, data_loader_test, device)
+    
     criterion = nn.CrossEntropyLoss()
 
     print("Running TEST evaluation...")

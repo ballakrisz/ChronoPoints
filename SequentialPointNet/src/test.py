@@ -9,8 +9,10 @@ import random
 import time
 #import gpu_utils as g
 import numpy as np
+import time
 import sys
 from pathlib import Path
+from calflops import calculate_flops
 
 sys.path.append(str(Path(__file__).resolve().parents[1])) # Add the src directory to sys.path
 from data.dataset import PointSeriesDataset
@@ -36,6 +38,142 @@ FRAME_GAP_DICT = {
     18 : 2,
     20 : 2,
 }
+
+
+def compute_model_complexity(model, dataloader, device, opt):
+
+    model.eval()
+
+    # ====================================================
+    # Parameters
+    # ====================================================
+
+    total_params = sum(p.numel() for p in model.parameters())
+    trainable_params = sum(
+        p.numel() for p in model.parameters()
+        if p.requires_grad
+    )
+
+    # ====================================================
+    # Get sample input
+    # ====================================================
+
+    points4DV_T, _, _ = next(iter(dataloader))
+
+    # use single sample
+    points4DV_T = points4DV_T[:1].to(device)
+
+    # preprocessing exactly like inference
+    xt, yt = group_points_4DV_T_S(points4DV_T, opt)
+
+    xt = xt.float().to(device)
+    yt = yt.float().to(device)
+
+    # ====================================================
+    # FLOPs / MACs
+    # ====================================================
+
+    flops, macs, params = calculate_flops(
+        model=model,
+        args=[xt, yt],
+        output_as_string=False,
+        output_precision=4
+    )
+
+    print("-------------------- SANITY CHECK --------------------")
+    print(f"Total parameters:     {total_params:,}")
+    print(f"Trainable parameters: {trainable_params:,}")
+    print("------------------------------------------------------")
+
+    print("\n---------------- MODEL COMPLEXITY ----------------")
+    print(f"FLOPs:  {flops / 1e9:.4f} GFLOPs")
+    print(f"MACs:   {macs / 1e9:.4f} GMACs")
+    print(f"Params: {params / 1e6:.4f} M")
+    print("--------------------------------------------------")
+
+    # ====================================================
+    # Benchmark
+    # ====================================================
+
+    warmup_iters = 20
+    benchmark_iters = 100
+
+    print("\nWarming up GPU...")
+
+    timings = []
+
+    with torch.no_grad():
+
+        # --------------------------------
+        # Warmup
+        # --------------------------------
+
+        for _ in range(warmup_iters):
+
+            xt, yt = group_points_4DV_T_S(points4DV_T, opt)
+
+            xt = xt.float().to(device)
+            yt = yt.float().to(device)
+
+            _ = model(xt, yt)
+
+        if device.type == "cuda":
+            torch.cuda.synchronize()
+
+        # --------------------------------
+        # Benchmark
+        # --------------------------------
+
+        for _ in range(benchmark_iters):
+
+            if device.type == "cuda":
+                torch.cuda.synchronize()
+
+            start = time.perf_counter()
+
+            # ==================================
+            # INCLUDE PREPROCESSING
+            # ==================================
+
+            xt, yt = group_points_4DV_T_S(points4DV_T, opt)
+
+            xt = xt.float().to(device)
+            yt = yt.float().to(device)
+
+            _ = model(xt, yt)
+
+            if device.type == "cuda":
+                torch.cuda.synchronize()
+
+            end = time.perf_counter()
+
+            timings.append(end - start)
+            
+    timings = np.array(timings)
+
+    # ====================================================
+    # Statistics
+    # ====================================================
+
+    mean_ms = timings.mean() * 1000
+    median_ms = np.median(timings) * 1000
+    std_ms = timings.std() * 1000
+    min_ms = timings.min() * 1000
+    max_ms = timings.max() * 1000
+
+    fps = 1000.0 / mean_ms
+
+    print("\n---------------- INFERENCE SPEED ----------------")
+    print(f"Warmup iterations:{warmup_iters}")
+    print(f"Benchmark runs:   {benchmark_iters}")
+    print("")
+    print(f"Mean latency:     {mean_ms:.3f} ms")
+    print(f"Median latency:   {median_ms:.3f} ms")
+    print(f"Std latency:      {std_ms:.3f} ms")
+    print(f"Min latency:      {min_ms:.3f} ms")
+    print(f"Max latency:      {max_ms:.3f} ms")
+    print(f"Throughput:       {fps:.2f} FPS")
+    print("--------------------------------------------------\n")
 
 def main(args=None):
     parser = argparse.ArgumentParser(description = "Evaluation")
@@ -134,7 +272,7 @@ def main(args=None):
         sequence_format=opt.config
     )
     opt.Num_Class = data_val.num_types
-    val_loader = DataLoader(dataset = data_val, batch_size = 8,num_workers = 8)
+    val_loader = DataLoader(dataset = data_val, batch_size = 16,num_workers = 8)
 
     #net =
 
@@ -144,6 +282,17 @@ def main(args=None):
 
     netR = torch.nn.DataParallel(netR).cuda()
     netR.cuda()
+    
+    device = torch.device("cuda")
+
+    compute_model_complexity(
+        model=netR.module,
+        dataloader=val_loader,
+        device=device,
+        opt=opt
+    )
+    
+    
     print(netR)
     
     total_params = sum(p.numel() for p in netR.parameters())
@@ -158,8 +307,12 @@ def main(args=None):
 
     conf_mat = np.zeros((opt.Num_Class, opt.Num_Class))
 
-    with torch.no_grad(): 
+    total_inference_time = 0.0
+    total_samples = 0
+
+    with torch.no_grad():
         for i, data in enumerate(tqdm(val_loader)):
+
             torch.cuda.synchronize()
 
             points4DV_T, label, vid_name = data
@@ -169,11 +322,20 @@ def main(args=None):
             xt = xt.type(torch.FloatTensor)
             yt = yt.type(torch.FloatTensor)
 
-            forward_time_start = time.time()
-            prediction = netR(xt, yt)
-            forward_time_end = time.time()
+            # =========================
+            # Measure inference time
+            # =========================
+            torch.cuda.synchronize()
+            forward_time_start = time.perf_counter()
 
-            # print('forward time:', forward_time_end - forward_time_start)
+            prediction = netR(xt, yt)
+
+            torch.cuda.synchronize()
+            forward_time_end = time.perf_counter()
+
+            batch_inference_time = forward_time_end - forward_time_start
+            total_inference_time += batch_inference_time
+            total_samples += label.size(0)
 
             _, predicted = torch.max(prediction.data, 1)
 
@@ -190,12 +352,17 @@ def main(args=None):
 
                 conf_mat[gt, pred] += 1.0
 
-
         confusion_counts = torch.tensor(conf_mat)
 
         tp = confusion_counts.diag()
         fp = confusion_counts.sum(dim=0) - tp
         fn = confusion_counts.sum(dim=1) - tp
+
+        # =========================
+        # Average inference time
+        # =========================
+        avg_inference_time_per_sample = total_inference_time / max(total_samples, 1)
+        avg_inference_time_ms = avg_inference_time_per_sample * 1000.0
 
         # Per-class metrics
         precision = tp.float() / (tp + fp).clamp(min=1)
@@ -220,7 +387,13 @@ def main(args=None):
         overall_acc = tp_sum / confusion_counts.sum()
         class_acc = tp.float() / confusion_counts.sum(dim=1).clamp(min=1)
         mean_acc = class_acc.mean().item()
-        
+
+        logging.info("Inference Performance")
+        logging.info("----------------------------------------------------")
+        logging.info(f"Total inference time:         {total_inference_time:.4f} s")
+        logging.info(f"Average inference per sample: {avg_inference_time_ms:.4f} ms")
+        logging.info("----------------------------------------------------\n")
+
         logging.info("Per-Class Precision / Recall / F1:")
         logging.info("----------------------------------------------------")
         for c in range(opt.Num_Class):

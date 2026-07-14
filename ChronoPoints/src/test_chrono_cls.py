@@ -2,9 +2,11 @@ import os
 import sys
 from pathlib import Path
 import numpy as np
+import time
 import random
 import torch
 import argparse
+from calflops import calculate_flops
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(str(Path(__file__).resolve().parents[1]))
@@ -21,6 +23,116 @@ FRAME_GAP_DICT = {
     16: 2, 18: 2, 20: 2,
 }
 
+
+def compute_model_complexity(model, dataloader, device, logger):
+
+    model.eval()
+
+    # ====================================================
+    # Parameters
+    # ====================================================
+    total_params = sum(p.numel() for p in model.parameters())
+    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+
+    # ====================================================
+    # Get sample input
+    # ====================================================
+    pcl_seq, masks, velocities, stamps, class_labels, type_labels = next(iter(dataloader))
+
+    # single sample
+    pcl_sequence = pcl_seq[:1].to(device)
+    mask = masks[:1].to(device)
+    velocity = velocities[:1].to(device)
+
+    # ====================================================
+    # FLOPs / MACs / Params
+    # ====================================================
+    flops, macs, params = calculate_flops(
+        model=model,
+        args=[pcl_sequence, mask, velocity],
+        output_as_string=False,
+        output_precision=4
+    )
+    
+    logger.info("-------------------- SANITY CHECK --------------------")
+    logger.info(f"Total parameters:     {total_params:,}")
+    logger.info(f"Trainable parameters: {trainable_params:,}")
+    logger.info("------------------------------------------------------")
+
+    log_empty_line(logger)
+    logger.info("---------------- MODEL COMPLEXITY ----------------")
+    logger.info(f"FLOPs:  {flops / 1e9:.4f} GFLOPs")
+    logger.info(f"MACs:   {macs / 1e9:.4f} GMACs")
+    logger.info(f"Params: {params / 1e6:.4f} M")
+    logger.info("--------------------------------------------------")
+
+    # ====================================================
+    # Robust inference benchmarking
+    # ====================================================
+
+    warmup_iters = 20
+    benchmark_iters = 100
+
+    print("Warming up GPU...")
+
+    with torch.no_grad():
+
+        # --------------------------------
+        # Warmup
+        # --------------------------------
+
+        for _ in range(warmup_iters):
+            _ = model(pcl_sequence, mask, velocity)
+
+        if device.type == "cuda":
+            torch.cuda.synchronize()
+
+        # --------------------------------
+        # Benchmark
+        # --------------------------------
+        timings = []
+
+        for _ in range(benchmark_iters):
+
+            if device.type == "cuda":
+                torch.cuda.synchronize()
+
+            start = time.perf_counter()
+
+            _ = model(pcl_sequence, mask, velocity)
+
+            if device.type == "cuda":
+                torch.cuda.synchronize()
+
+            end = time.perf_counter()
+
+            timings.append(end - start)
+
+    timings = np.array(timings)
+
+    # ====================================================
+    # Statistics
+    # ====================================================
+    mean_ms = timings.mean() * 1000
+    std_ms = timings.std() * 1000
+    median_ms = np.median(timings) * 1000
+    min_ms = timings.min() * 1000
+    max_ms = timings.max() * 1000
+
+    fps = 1000.0 / mean_ms
+
+    log_empty_line(logger)
+    logger.info("---------------- INFERENCE SPEED ----------------")
+    logger.info(f"Warmup iterations:{warmup_iters}")
+    logger.info(f"Benchmark runs:   {benchmark_iters}")
+    logger.info("")
+    logger.info(f"Mean latency:     {mean_ms:.3f} ms")
+    logger.info(f"Median latency:   {median_ms:.3f} ms")
+    logger.info(f"Std latency:      {std_ms:.3f} ms")
+    logger.info(f"Min latency:      {min_ms:.3f} ms")
+    logger.info(f"Max latency:      {max_ms:.3f} ms")
+    logger.info(f"Throughput:       {fps:.2f} FPS")
+    logger.info("--------------------------------------------------\n")
 
 # =========================
 # Evaluation
@@ -44,15 +156,36 @@ def evaluate(classifier, dataloader, device, logger, label_decoder=None):
     correct_count = 0
     incorrect_count = 0
 
+    # =========================
+    # Inference timing
+    # =========================
+    total_inference_time = 0.0
+    
     with torch.no_grad():
         for pcl_seq, masks, velocities, stamps, class_labels, type_labels in tqdm(dataloader):
-
             pcl_sequence = pcl_seq.to(device, non_blocking=True)
             mask = masks.to(device, non_blocking=True)
             velocities = velocities.to(device, non_blocking=True)
             labels = type_labels.to(device, non_blocking=True)
 
+            # =========================
+            # Measure inference time
+            # =========================
+            # if device.type == "cuda":
+            #     torch.cuda.synchronize()
+
+            start_time = time.perf_counter()
+
             logits, _ = classifier(pcl_sequence, mask, velocities)
+
+            # if device.type == "cuda":
+            #     torch.cuda.synchronize()
+
+            end_time = time.perf_counter()
+
+            batch_inference_time = end_time - start_time
+            total_inference_time += batch_inference_time
+
             preds = logits.argmax(dim=1)
 
             probs = softmax(logits)
@@ -89,6 +222,12 @@ def evaluate(classifier, dataloader, device, logger, label_decoder=None):
     avg_conf_incorrect = conf_incorrect_sum / max(incorrect_count, 1)
 
     # =========================
+    # Average inference time
+    # =========================
+    avg_inference_time_per_sample = total_inference_time / total_samples
+    avg_inference_time_ms = avg_inference_time_per_sample * 1000.0
+
+    # =========================
     # Precision / Recall / F1
     # =========================
     tp = confusion_counts.diag()
@@ -120,6 +259,12 @@ def evaluate(classifier, dataloader, device, logger, label_decoder=None):
     logger.info("----------------------------------------------------")
     logger.info(f"Correct predictions:   {correct_count:6d} | Avg confidence: {avg_conf_correct:.4f}")
     logger.info(f"Incorrect predictions: {incorrect_count:6d} | Avg confidence: {avg_conf_incorrect:.4f}")
+    logger.info("----------------------------------------------------\n")
+
+    logger.info("Inference Performance")
+    logger.info("----------------------------------------------------")
+    logger.info(f"Total inference time:    {total_inference_time:.4f} [s]")
+    logger.info(f"Average time per sample: {avg_inference_time_ms:.4f} [ms]")
     logger.info("----------------------------------------------------\n")
 
     logger.info("Per-Class Results:")
@@ -289,10 +434,24 @@ def main():
         poly_order=3
     )
 
-    classifier.load_state_dict(state['model_state_dict'])
+    classifier.load_state_dict(state['model_state_dict'], strict=False)
     classifier.to(device)
+    
+    classifier.eval().cuda()
+    
+    print(classifier)
 
     logger.info(f"Loaded model with val OA: {state['val_OA']}, val mAcc: {state['val_mAcc']}\n")
+    
+    # =========================
+    # FLOPs / Params
+    # =========================
+    compute_model_complexity(
+        classifier,
+        test_dataloader,
+        device,
+        logger
+    )
 
     # -------------------------
     # Evaluate
