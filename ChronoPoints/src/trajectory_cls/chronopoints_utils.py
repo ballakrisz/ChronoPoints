@@ -4,7 +4,8 @@ import numpy as np
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F    
+import torch.nn.functional as F
+from pointnet2_ops import pointnet2_utils    
     
     
 def plot_trajectory_with_pcls(pts_sequence, seq_centroids, z_trajectory, poly_order=3, seq_idx=0, num_curve_points=50):
@@ -464,53 +465,128 @@ def temporal_radius_from_dt(delta_t, radius_table):
 
 
 def spatiotemporal_group_flat_radius(
-    xyz, time, feats, anchor_idx, nsample, radius_table
+    xyz,
+    time,
+    feats,
+    anchor_idx,
+    nsample,
+    radius_table
 ):
     """
-    xyz:        (B, N, 3)
-    time:       (B, N, 1)
-    feats:      (B, N, C) or None
-    anchor_idx: (B, K)
-    nsample:    int
-    radius_table: (T,)
+    Hybrid CUDA implementation:
+    - PointNet++ ball query for spatial candidates
+    - temporal adaptive filtering afterward
+
+    Preserves original behavior approximately,
+    but MUCH faster than dense cdist.
     """
+
     B, N, _ = xyz.shape
     K = anchor_idx.shape[1]
 
-    anchor_xyz = torch.gather(
-        xyz, 1, anchor_idx.unsqueeze(-1).expand(-1, -1, 3)
-    )  # (B,K,3)
+    # =========================================================
+    # Gather anchor xyz/time
+    # =========================================================
 
-    anchor_time = torch.gather(
-        time, 1, anchor_idx.unsqueeze(-1)
-    )  # (B,K,1)
+    anchor_xyz = pointnet2_utils.gather_operation(
+        xyz.transpose(1, 2).contiguous(),
+        anchor_idx
+    ).transpose(1, 2).contiguous()  # (B,K,3)
 
-    spatial_dist = torch.cdist(anchor_xyz, xyz)  # (B,K,N)
+    anchor_time = pointnet2_utils.gather_operation(
+        time.transpose(1, 2).contiguous(),
+        anchor_idx
+    ).transpose(1, 2).contiguous()  # (B,K,1)
 
-    delta_t = torch.abs(anchor_time - time.transpose(1, 2))  # (B,K,N)
-    radius = temporal_radius_from_dt(delta_t, radius_table)  # (B,K,N)
+    # =========================================================
+    # Use MAX radius for spatial preselection
+    # =========================================================
 
-    spatial_dist = spatial_dist.masked_fill(
-        spatial_dist > radius, float("inf")
+    max_radius = radius_table.max().item()
+
+    idx = pointnet2_utils.ball_query(
+        max_radius,
+        nsample,
+        xyz.contiguous(),
+        anchor_xyz.contiguous()
+    ).int()  # (B,K,nsample)
+
+    # =========================================================
+    # Gather neighbor xyz
+    # =========================================================
+
+    grouped_xyz = pointnet2_utils.grouping_operation(
+        xyz.transpose(1, 2).contiguous(),
+        idx
     )
 
-    idx = spatial_dist.topk(nsample, largest=False).indices  # (B,K,nsample)
+    grouped_xyz = grouped_xyz.permute(
+        0, 2, 3, 1
+    ).contiguous()  # (B,K,nsample,3)
 
-    neigh_xyz = torch.gather(
-        xyz.unsqueeze(1).expand(-1, K, -1, 3),
-        2,
-        idx.unsqueeze(-1).expand(-1, -1, -1, 3)
-    ) # (B, K, nsample, 3)
+    # =========================================================
+    # Gather neighbor time
+    # =========================================================
 
-    rel_xyz = neigh_xyz - anchor_xyz.unsqueeze(2)
+    grouped_time = pointnet2_utils.grouping_operation(
+        time.transpose(1, 2).contiguous(),
+        idx
+    )
+
+    grouped_time = grouped_time.permute(
+        0, 2, 3, 1
+    ).contiguous()  # (B,K,nsample,1)
+
+    # =========================================================
+    # Temporal adaptive radius filtering
+    # =========================================================
+
+    delta_t = torch.abs(
+        grouped_time - anchor_time.unsqueeze(2)
+    )  # (B,K,nsample,1)
+
+    adaptive_radius = temporal_radius_from_dt(
+        delta_t.squeeze(-1),
+        radius_table
+    )  # (B,K,nsample)
+
+    spatial_dist = torch.norm(
+        grouped_xyz - anchor_xyz.unsqueeze(2),
+        dim=-1
+    )  # (B,K,nsample)
+
+    valid_mask = spatial_dist <= adaptive_radius
+
+    # =========================================================
+    # Relative xyz
+    # =========================================================
+
+    rel_xyz = grouped_xyz - anchor_xyz.unsqueeze(2)
+
+    # zero invalid neighbors
+    rel_xyz = rel_xyz * valid_mask.unsqueeze(-1)
+
+    # =========================================================
+    # Features
+    # =========================================================
 
     if feats is not None:
-        neigh_feats = torch.gather(
-            feats.unsqueeze(1).expand(-1, K, -1, feats.shape[-1]),
-            2,
-            idx.unsqueeze(-1).expand(-1, -1, -1, feats.shape[-1])
+
+        grouped_feats = pointnet2_utils.grouping_operation(
+            feats.transpose(1, 2).contiguous(),
+            idx
         )
-        return torch.cat([rel_xyz, neigh_feats], dim=-1)
+
+        grouped_feats = grouped_feats.permute(
+            0, 2, 3, 1
+        ).contiguous()
+
+        grouped_feats = grouped_feats * valid_mask.unsqueeze(-1)
+
+        return torch.cat(
+            [rel_xyz, grouped_feats],
+            dim=-1
+        )
 
     return rel_xyz
 

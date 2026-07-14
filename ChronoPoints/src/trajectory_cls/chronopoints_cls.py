@@ -5,9 +5,11 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(current_dir)
 
 from chronopoints_utils import farthest_point_sample, spatiotemporal_group_flat_radius, make_radius_table, CrossAttentionFusion, GatedFusion
+import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from pointnet2_ops import pointnet2_utils
     
     
 
@@ -16,11 +18,12 @@ def compute_centroid(pc, mask=None, mode="mean", eps=1e-6):
     Compute the centroid of a point cloud using either:
       - mean of valid points
       - center of bounding box of valid points
+      - median coordinate of valid points
 
     Args:
         pc:   (B, T, N, 3)
         mask: (B, T, N) boolean mask
-        mode: "mean" | "bbox"
+        mode: "mean" | "bbox" | "median"
 
     Returns:
         centroid: (B, T, 3)
@@ -32,18 +35,39 @@ def compute_centroid(pc, mask=None, mode="mean", eps=1e-6):
         if mode == "mean":
             denom = valid.sum(dim=2, keepdim=True) + eps      # (B,T,1)
             centroid = (pc * valid_exp).sum(dim=2) / denom    # (B,T,3)
-
+            
         elif mode == "bbox":
             big = 1e9
-            pc_min = pc.clone()
-            pc_max = pc.clone()
-            pc_min[valid == 0] =  big
-            pc_max[valid == 0] = -big
 
-            min_xyz = pc_min.min(dim=2).values                # (B,T,3)
-            max_xyz = pc_max.max(dim=2).values                # (B,T,3)
+            valid_exp = valid.unsqueeze(-1).bool()
+
+            pc_min = torch.where(
+                valid_exp,
+                pc,
+                torch.full_like(pc, big)
+            )
+
+            pc_max = torch.where(
+                valid_exp,
+                pc,
+                torch.full_like(pc, -big)
+            )
+
+            min_xyz = pc_min.min(dim=2).values
+            max_xyz = pc_max.max(dim=2).values
+
             centroid = (min_xyz + max_xyz) / 2.0
+            
+        elif mode == "median":
+            valid_exp = mask.unsqueeze(-1)
 
+            pc_masked = pc.masked_fill(~valid_exp, float("nan"))
+
+            centroid = torch.nanquantile(pc_masked, 0.5, dim=2)  # (B,T,3)
+
+            # optional: replace NaNs when a frame has no valid points
+            centroid = torch.nan_to_num(centroid, nan=0.0)
+            
         else:
             raise ValueError(f"Unknown mode '{mode}' for centroid extraction")
 
@@ -55,6 +79,8 @@ def compute_centroid(pc, mask=None, mode="mean", eps=1e-6):
             min_xyz = pc.min(dim=2).values
             max_xyz = pc.max(dim=2).values
             centroid = (min_xyz + max_xyz) / 2.0
+        elif mode == "median":
+            centroid = pc.median(dim=2).values
         else:
             raise ValueError(f"Unknown mode '{mode}' for centroid extraction")
 
@@ -106,40 +132,30 @@ class FrameEncoder(nn.Module):
         self.post_pool_dropout = nn.Dropout(p=0.1)
 
     def forward(self, pts, mask=None):
-        """
-        Args:
-            pts:  (B, T, N, 3) - batch of sequences  of point clouds belonging to the same sequence
-            mask: (B, T, N) - optional boolean mask (True=valid, False=padded), indicating actual and padded points
 
-        Returns:
-            frame_features: (B, T, D) - embedding per frame
-        """
         B, T, N, C = pts.shape
 
-        # Flatten batch and time for efficient processing
-        x = pts.view(B*T, N, C)
+        x = pts.reshape(B * T, N, C)
 
-        # Shared MLP on each point independently
-        x = self.mlp(x)  # (B*T, N, D)
+        x = self.mlp(x)
 
-        # Mask invalid (padded) points if present
         if mask is not None:
-            m = mask.view(B * T, N)          # (B*T, N)
-            neg_inf = torch.finfo(x.dtype).min / 2
-            x = x.masked_fill(~m.unsqueeze(-1), neg_inf)
 
-        # Global max pooling over points (permutation-invariant aggregation)
-        x = x.max(dim=1).values  # (B*T, D)
-        # x = self.post_pool_dropout(x) # don't use dropout in the shared MLP -> too destructive
-        
+            m = mask.reshape(B * T, N).unsqueeze(-1)
+
+            neg_large = torch.full_like(x, -1e9)
+
+            x = torch.where(m, x, neg_large)
+
+        x = x.max(dim=1).values
+
         if mask is not None:
-            # detect frames with no valid points
-            frame_has_points = mask.view(B * T, N).any(dim=1)  # (B*T,)
-            # zero-out features where there were no points at all
-            x[~frame_has_points] = 0.0
 
-        # Reshape back to sequence form
-        return x.view(B, T, -1)  # (B, T, D)
+            frame_has_points = mask.reshape(B * T, N).any(dim=1)
+
+            x = x * frame_has_points.unsqueeze(-1)
+
+        return x.reshape(B, T, -1)
 
 
 # ---------- Distortion Encoder (with FrameEncoder inside) ----------
@@ -178,9 +194,9 @@ class DistortionEncoder(nn.Module):
             nhead=transformer_heads,
             dim_feedforward=emb_dim * 4,
             batch_first=True,
-            activation='gelu'
+            activation='gelu',
         )
-        self.temporal = nn.TransformerEncoder(enc_layer, num_layers=transformer_layers)
+        self.temporal = nn.TransformerEncoder(enc_layer, num_layers=transformer_layers, enable_nested_tensor=False)
         
         # --- (5) Final projection to latent distortion embedding ---
         self.proj = nn.Sequential(
@@ -204,7 +220,7 @@ class DistortionEncoder(nn.Module):
         
         # frame-level validity: True if any point is valid
         if mask is not None:
-            frame_valid = (mask.sum(dim=2) > 0)  # (B, T)
+            frame_valid = mask.any(dim=2)  # (B, T)
         else:
             frame_valid = torch.ones(B, T, dtype=torch.bool, device=pts.device)
         
@@ -255,7 +271,7 @@ def extract_centroids_with_velocities(pts, mask, velocities, eps=1e-6, centroid_
     centroid = compute_centroid(pts, mask=mask, mode=centroid_mode)  # (B, T, 3)
 
     # frame-level validity
-    frame_valid = (valid.sum(dim=2) > 0)              # (B, T)
+    frame_valid = mask.any(dim=2)              # (B, T)
 
     # sanitize velocities (in case of NaNs / Infs) -> though its highly unlikely, as dataloader should prevent this (lots of sanity checks)
     velocities = torch.nan_to_num(velocities, nan=0.0, posinf=0.0, neginf=0.0)
@@ -265,8 +281,6 @@ def extract_centroids_with_velocities(pts, mask, velocities, eps=1e-6, centroid_
 
     seq_centroids = torch.cat([centroid, velocities], dim=-1)  # (B, T, 6)
     return seq_centroids, frame_valid
-
-
     
 # ---------- Trajectory Encoder ----------
 class TrajectoryEncoder(nn.Module):
@@ -284,6 +298,17 @@ class TrajectoryEncoder(nn.Module):
         self.poly_order = poly_order
         self.input_dim = T * 6 + 3*(poly_order+1)  # 6 features per frame + polynomial coefficients
         self.centroid_mode = centroid_mode
+        
+        t = torch.arange(T, dtype=torch.float32)
+
+        A = torch.stack(
+            [t ** i for i in range(poly_order + 1)],
+            dim=-1
+        )
+
+        pinv = torch.linalg.pinv(A)
+
+        self.register_buffer("poly_pinv", pinv)
         
         layers = []
         last_dim = self.input_dim
@@ -321,25 +346,19 @@ class TrajectoryEncoder(nn.Module):
         A = A.unsqueeze(0).expand(B, -1, -1)                                       # (B, T, order+1)
 
         # weights: 1 for valid frame, 0 for empty frame
-        w = frame_valid.float()  # (B, T)
+        w = frame_valid.float().unsqueeze(-1)
 
-        polyn_coeffs = []
-        for dim in range(3):  # fit poly for x,y,z
-            y = seq_centroids[:, :, dim]  # (B, T)
+        y = seq_centroids[:, :, :3] * w
 
-            # Weighted least squares: multiply rows by weight
-            w_exp = w.unsqueeze(-1)             # (B, T, 1)
-            A_w = A * w_exp                     # (B, T, order+1)
-            y_w = y.unsqueeze(-1) * w_exp       # (B, T, 1)
+        coeffs = torch.matmul(
+            self.poly_pinv.unsqueeze(0),
+            y
+        )
 
-            # stable batched least squares
-            coeffs = torch.linalg.lstsq(A_w, y_w).solution  # (B, order+1, 1)
-            polyn_coeffs.append(coeffs.squeeze(-1))         # (B, order+1)
-
-        polyn_coeffs = torch.cat(polyn_coeffs, dim=-1)      # (B, 3*(order+1))
+        polyn_coeffs = coeffs.reshape(B, -1)
 
         # flatten centroids (empty frames contribute zeros)
-        seq_flat = seq_centroids.view(B, -1)                # (B, T*6)
+        seq_flat = seq_centroids.reshape(B, -1)                # (B, T*6)
 
         x = torch.cat([seq_flat, polyn_coeffs], dim=-1)     # (B, T*6 + 3*(order+1))
 
@@ -380,7 +399,12 @@ class SpatioTemporalLayer(nn.Module):
         """
 
         # Farthest point sampling
-        anchor_idx = farthest_point_sample(xyz, self.npoint)
+        # anchor_idx = farthest_point_sample(xyz, self.npoint)
+        
+        anchor_idx = pointnet2_utils.furthest_point_sample(
+            xyz.contiguous(),
+            self.npoint
+        ).int()
 
         # Spatio-temporal grouping
         grouped = spatiotemporal_group_flat_radius(
@@ -400,13 +424,15 @@ class SpatioTemporalLayer(nn.Module):
         x = x.max(dim=2).values  # (B, npoint, out_channels)
 
         # Gather new xyz + time
-        new_xyz = torch.gather(
-            xyz, 1, anchor_idx.unsqueeze(-1).expand(-1, -1, 3)
-        )
+        new_xyz = pointnet2_utils.gather_operation(
+            xyz.transpose(1, 2).contiguous(),
+            anchor_idx
+        ).transpose(1, 2).contiguous()   # (B,K,3)
 
-        new_time = torch.gather(
-            time, 1, anchor_idx.unsqueeze(-1)
-        )
+        new_time = pointnet2_utils.gather_operation(
+            time.transpose(1, 2).contiguous(),
+            anchor_idx
+        ).transpose(1, 2).contiguous()   # (B,K,1)
 
         return new_xyz, new_time, x
 
@@ -494,7 +520,7 @@ class ChronoPointsClassifier(nn.Module):
         fusion_hidden_factor=4,
         fusion_dropout=0.2,
         centroid_mode="mean",
-        poly_order=3
+        poly_order=3,
     ):
         super().__init__()
 
@@ -513,7 +539,7 @@ class ChronoPointsClassifier(nn.Module):
         self.trajectory_encoder = TrajectoryEncoder(
             T=traj_T,
             emb_dim=emb_dim,
-            hidden_dims=(256, 128),
+            hidden_dims=(2*emb_dim, emb_dim),
             poly_order=poly_order,
             centroid_mode=centroid_mode
         )
