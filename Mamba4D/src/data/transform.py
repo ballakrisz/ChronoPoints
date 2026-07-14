@@ -83,17 +83,30 @@ def jitter_sequence(points_seq, sigma=0.01, temporal_smooth=0.5):
     return out
 
 def temporal_warp_sequence(points_seq, max_skip=2):
-    warped = []
-    i = 0
-    while i < len(points_seq):
-        warped.append(points_seq[i])
-        i += np.random.randint(1, max_skip + 1)
+    seq_len = len(points_seq)
+    max_skip = int(seq_len // 5)
+    
+    if (max_skip < 1):
+        return points_seq, None
+    
+    warped = [frame.copy() for frame in points_seq]
 
-    # pad back to original length
-    while len(warped) < len(points_seq):
-        warped.append(warped[-1])
+    # Number of frames to remove
+    n_skip = np.random.randint(1, max_skip + 1)
 
-    return warped[:len(points_seq)]
+    # Random frame indices to replace (we keep the first and last one)
+    skip_indices = np.random.choice(
+        np.arange(1, seq_len-1),
+        size=n_skip,
+        replace=False
+    )
+
+    pad_frame = np.zeros_like(points_seq[0])
+
+    for idx in skip_indices:
+        warped[idx] = pad_frame.copy()
+
+    return warped, skip_indices
 
 def point_dropout_with_padding_sequence(points_seq, masks_seq, max_dropout_ratio=0.4):
     """

@@ -1,5 +1,5 @@
-image_name="chrono_points_cls_test"
+image_name="chrono_points_cls_test2"
 image_tag="latest"
-container_name="chrono_points_cls_test"
+container_name="chrono_points_cls_test2"
 src_folder="./src"
 dataset_folder="$(realpath ../dataset/chronopoints_cls_benchmark)"

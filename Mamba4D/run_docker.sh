@@ -70,7 +70,7 @@ else
         --env NVIDIA_DRIVER_CAPABILITIES=all \
         --volume /tmp/.X11-unix:/tmp/.X11-unix \
         --volume ${src_folder}:/home/appuser/src \
-        --volume ${dataset_folder}:/home/appuser/chrono_points_cls_benchmark \
+        --volume ${dataset_folder}:/home/appuser/chronopoints_cls_benchmark \
         --network host \
         --interactive \
         --privileged \

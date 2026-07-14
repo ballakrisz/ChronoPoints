@@ -365,6 +365,7 @@ class PointSeriesDataset(Dataset):
         - Ensure different random seeds per worker for proper randomness in augmentations:
             e.g., worker_init_fn=lambda worker_id: np.random.seed(42 + worker_id) --> yeah, well this does not work... you need to seed them based on the global RNG state. 
         """        
+        skip_indices = None
         point_seq_np = dict_item['point_clouds']
         if self.augment:
             if np.random.rand() < 0.7:
@@ -377,7 +378,7 @@ class PointSeriesDataset(Dataset):
                 point_seq_np = jitter_sequence(point_seq_np)
 
             if np.random.rand() < 0.3:
-                point_seq_np = temporal_warp_sequence(point_seq_np)
+                point_seq_np, skip_indices = temporal_warp_sequence(point_seq_np)
 
 
                 
@@ -406,6 +407,8 @@ class PointSeriesDataset(Dataset):
         point_seq_torch = point_seq_torch[:, :, :3]  # Keep only XYZ for model input
         
         masks = torch.stack([torch.from_numpy(mask).bool() for mask in dict_item['masks']], dim=0) # (T, N)
+        if skip_indices is not None:
+            masks[skip_indices] = False
         
         velocities = torch.stack([torch.from_numpy(vel).float() for vel in dict_item['velocities']], dim=0)  # (T, 3)
         
