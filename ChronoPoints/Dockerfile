@@ -68,7 +68,8 @@ RUN pip install \
     optuna \
     optuna-dashboard \
     kaleido \
-    plotly
+    plotly \
+    torchinfo
 
 # install PointNet++ pytorch cuda ops (needed for FPS sampling and sptatiotemporal grouping)
 RUN git clone https://github.com/erikwijmans/Pointnet2_PyTorch.git
