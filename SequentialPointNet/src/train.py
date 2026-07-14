@@ -131,7 +131,7 @@ def main(args=None):
     #     )
     
     data_train = PointSeriesDataset(
-        data_root_dir='/home/appuser/chrono_points_cls_benchmark',
+        data_root_dir='/home/appuser/chronopoints_cls_benchmark',
         split='train',
         max_points_per_frame=512,
         single_return_only=True,
@@ -155,7 +155,7 @@ def main(args=None):
     #     Transform = False
     #     )
     data_val = PointSeriesDataset(
-        data_root_dir='/home/appuser/chrono_points_cls_benchmark',
+        data_root_dir='/home/appuser/chronopoints_cls_benchmark',
         split='val',
         max_points_per_frame=512,
         single_return_only=True,

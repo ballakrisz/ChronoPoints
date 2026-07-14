@@ -13,7 +13,7 @@ then
 fi
 if  ! [ -d "$src_folder" ] || ! [ -d "$dataset_folder" ];
 then
-    echo "Please make sure you provide directories that exist."
+    echo "Please make sure you provide directories in misc/.params that exist. (you probably forgot to download and extract the dataset into dataset/)"
     exit
 fi
 

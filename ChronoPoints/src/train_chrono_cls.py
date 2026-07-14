@@ -217,7 +217,7 @@ def parse_args():
     parser.add_argument('--resume', type=str, default=None, help='Path to a run directory to resume training from.')
 
     # Dataset
-    parser.add_argument('--data_root', type=str, default='/home/appuser/chrono_points_cls_benchmark', help="Root directory of the chrono_points_cls_benchmark dataset")
+    parser.add_argument('--data_root', type=str, default='/home/appuser/chronopoints_cls_benchmark', help="Root directory of the chrono_points_cls_benchmark dataset")
 
     # Point cloud sequence
     parser.add_argument('--num_frame', type=int, default=None, help='Number of frames in each point cloud sequence.')

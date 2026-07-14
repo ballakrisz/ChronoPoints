@@ -90,7 +90,7 @@ FRAME_GAP_DICT = {
 config = "f{}g{}".format(FLAGS.num_frames, FRAME_GAP_DICT[FLAGS.num_frames])
 
 TRAIN_DATASET = PointSeriesDataset(
-    data_root_dir='/home/appuser/chrono_points_cls_benchmark',
+    data_root_dir='/home/appuser/chronopoints_cls_benchmark',
     split='train',
     max_points_per_frame=512,
     single_return_only=True,
@@ -101,7 +101,7 @@ TRAIN_DATASET = PointSeriesDataset(
     backend="tf"
 )
 TEST_DATASET = PointSeriesDataset(
-    data_root_dir='/home/appuser/chrono_points_cls_benchmark',
+    data_root_dir='/home/appuser/chronopoints_cls_benchmark',
     split='val',
     max_points_per_frame=512,
     single_return_only=True,
