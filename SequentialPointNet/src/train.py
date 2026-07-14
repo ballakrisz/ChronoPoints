@@ -24,6 +24,7 @@ from torchvision import transforms
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 import logging
+from torch.profiler import profile, record_function, ProfilerActivity
 
 FRAME_GAP_DICT = {
     2 : 0,
@@ -165,6 +166,19 @@ def main(args=None):
         sequence_format=opt.config
     )
     val_loader = DataLoader(dataset = data_val, batch_size = 24,num_workers = 8)
+    
+    
+    # NOTE:
+    # cuDNN BatchNorm is unexpectedly very slow for this model on our setup
+    # (PyTorch 2.3.1 / CUDA 11.8 / cuDNN 8.7), increasing training time from
+    # ~30 s/epoch to ~3 min/epoch. Profiling attributes the slowdown to
+    # cudnn_batch_norm. Disabling cuDNN forces PyTorch's native CUDA BatchNorm,
+    # restoring the expected performance without modifying the original model
+    
+    # NOTE:
+    # If i change the first BatchNorm2d operation to GroupNorm and USE the cuDNN kernels, then a single epoch runs in 30s
+    # However, changing the model would weaken the comparioson with ChronoPoints, so its safer to just disable cuDNN altogether.
+    torch.backends.cudnn.enabled = False
 
     netR = PointNet_Plus(opt)
 
@@ -202,8 +216,8 @@ def main(args=None):
             xt = xt.type(torch.FloatTensor)
             yt = yt.type(torch.FloatTensor)
 
-            prediction = netR(xt,yt)
-
+            prediction = netR(xt, yt)
+            
             loss = criterion(prediction,label)
             optimizer.zero_grad()
 
