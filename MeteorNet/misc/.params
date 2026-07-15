@@ -1,5 +1,5 @@
-image_name="meteornet_test"
+image_name="meteornet_cls"
 image_tag="latest"
-container_name="meteornet_test"
+container_name="meteornet_cls"
 src_folder="./src"
 dataset_folder="$(realpath ../dataset/chronopoints_cls_benchmark)"

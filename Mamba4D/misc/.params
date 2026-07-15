@@ -1,5 +1,5 @@
-image_name="mamba4d_test"
+image_name="mamba4d_cls"
 image_tag="latest"
-container_name="mamba4d_test"
+container_name="mamba4d_cls"
 src_folder="./src"
 dataset_folder="$(realpath ../dataset/chronopoints_cls_benchmark)"
