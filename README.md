@@ -22,7 +22,7 @@ The project has been tested on **Ubuntu 22.04** with the following GPUs:
 - NVIDIA GeForce GTX 1080 Ti  
 - NVIDIA GeForce RTX 3080 Ti  
 
-(Though you'll have to manually compile custom TensorFlow GPU ops against newer video cards to use MeteorNet. For the 1080Ti  we provide them already compiled.)
+(Though you'll have to manually compile custom TensorFlow GPU ops against newer video cards that are not compatible with CUDA 9 to use MeteorNet (see the README in the MeteorNet folder). For CUDA 9 we provide them already compiled.)
 ### Docker
 
 Docker is required to run the project. Install it by following the official guide:
