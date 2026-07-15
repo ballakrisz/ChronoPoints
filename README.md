@@ -8,7 +8,7 @@ https://drive.google.com/file/d/1Xfz22RLZl0_2RmsJ2Wj2Fg8v-ongBgAE/view?usp=shari
 Extract it so that your folder structure looks like this:
 ```bash
 dataset/
-└── chrono_points_cls_benchmark/
+└── chronopoints_cls_benchmark/
 ```
 
 ## Benchmark Models, Attribution, and Usage
