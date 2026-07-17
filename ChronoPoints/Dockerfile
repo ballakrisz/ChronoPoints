@@ -55,7 +55,8 @@ RUN apt-get update && \
     unzip \
     cmake \
     python3-dev \
-    chromium-browser
+    chromium-browser \
+    python3-tk
 
 # Install Python dependencies
 RUN pip install \
