@@ -1,4 +1,4 @@
-dataset/chronopoints_cls_benchmark/
+dataset/LIFT_benchmark/
 __pycache__/
 *.pyc
 output/
