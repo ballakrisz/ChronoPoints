@@ -310,7 +310,7 @@ def main(ckpt):
     print("Loading TEST dataset...")
 
     dataset_test = PointSeriesDataset(
-        data_root_dir='/home/appuser/chronopoints_cls_benchmark',
+        data_root_dir='/home/appuser/LIFT_benchmark',
         split='test',   
         max_points_per_frame=512,
         single_return_only=True,

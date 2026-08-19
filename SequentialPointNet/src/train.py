@@ -117,6 +117,10 @@ def main(args=None):
         level=logging.INFO
     )
 
+    logging.info("Arguments:")
+    for key, value in vars(opt).items():
+        logging.info("  %s: %s", key, value)
+
     os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 
     torch.backends.cudnn.benchmark = True
@@ -132,7 +136,7 @@ def main(args=None):
     #     )
     
     data_train = PointSeriesDataset(
-        data_root_dir='/home/appuser/chronopoints_cls_benchmark',
+        data_root_dir='/home/appuser/LIFT_benchmark',
         split='train',
         max_points_per_frame=512,
         single_return_only=True,
@@ -156,7 +160,7 @@ def main(args=None):
     #     Transform = False
     #     )
     data_val = PointSeriesDataset(
-        data_root_dir='/home/appuser/chronopoints_cls_benchmark',
+        data_root_dir='/home/appuser/LIFT_benchmark',
         split='val',
         max_points_per_frame=512,
         single_return_only=True,

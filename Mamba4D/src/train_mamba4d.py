@@ -190,6 +190,10 @@ def main(args):
     print("torch version: ", torch.__version__)
     print("torchvision version: ", torchvision.__version__)
 
+    logging.getLogger().info("Arguments:")
+    for key, value in vars(args).items():
+        logging.getLogger().info("  %s: %s", key, value)
+
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed(args.seed)
@@ -212,7 +216,7 @@ def main(args):
     # )
     # 
     dataset = PointSeriesDataset(
-        data_root_dir='/home/appuser/chronopoints_cls_benchmark',
+        data_root_dir='/home/appuser/LIFT_benchmark',
         split='train',
         max_points_per_frame=512,
         single_return_only=True,
@@ -230,7 +234,7 @@ def main(args):
     #         train=False
     # )
     dataset_test = PointSeriesDataset(
-        data_root_dir='/home/appuser/chronopoints_cls_benchmark',
+        data_root_dir='/home/appuser/LIFT_benchmark',
         split='val',
         max_points_per_frame=512,
         single_return_only=True,

@@ -12,6 +12,7 @@ import torch.nn.functional as F
 import torchvision
 from torchvision import transforms
 from tqdm import tqdm
+import logging
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__))) # Add the current file's directory to sys.path
 
@@ -70,7 +71,8 @@ def train_one_epoch(model, criterion, optimizer, lr_scheduler, data_loader, devi
     loss_avg = loss_sigma / len(data_loader)
     
     print(f'[TRAIN] Epoch {epoch} | OA: {OA:.4f} | mAcc: {mAcc:.4f} | Loss: {loss_avg:.4f}')
-    
+    logging.info(f'[TRAIN] Epoch {epoch} | OA: {OA:.4f} | mAcc: {mAcc:.4f} | Loss: {loss_avg:.4f}')
+
 
 def evaluate(model, criterion, data_loader, device, epoch):
     model.eval()
@@ -103,7 +105,7 @@ def evaluate(model, criterion, data_loader, device, epoch):
     loss_avg = loss_sigma / len(data_loader)
     
     print(f'[VAL] Epoch {epoch} | OA: {OA:.4f} | mAcc: {mAcc:.4f} | Loss: {loss_avg:.4f}')
-    
+    logging.info(f'[VAL] Epoch {epoch} | OA: {OA:.4f} | mAcc: {mAcc:.4f} | Loss: {loss_avg:.4f}')
     return mAcc
 
 
@@ -115,6 +117,17 @@ def main(args):
     if args.output_dir:
         args.output_dir = f"{args.output_dir}/{config}_seed_{args.seed}"
         utils.mkdir(args.output_dir)
+
+    logging.basicConfig(
+        format='%(asctime)s %(message)s',
+        datefmt='%Y/%m/%d %H:%M:%S',
+        filename=os.path.join(args.output_dir, 'train.log'),
+        level=logging.INFO
+    )
+
+    logging.info("Arguments:")
+    for key, value in vars(args).items():
+        logging.info("  %s: %s", key, value)
 
     print(args)
     print("torch version: ", torch.__version__)
@@ -246,7 +259,7 @@ def parse_args():
     parser.add_argument('--frame-interval', default=1, type=int, metavar='N', help='interval between sampled frames')
     parser.add_argument('--num-points', default=512, type=int, metavar='N', help='number of points per frame')
     parser.add_argument('-b', '--batch-size', default=16, type=int)
-    parser.add_argument('--epochs', default=35, type=int, metavar='N', help='number of total epochs to run')
+    parser.add_argument('--epochs', default=200, type=int, metavar='N', help='number of total epochs to run')
     parser.add_argument('-j', '--workers', default=10, type=int, metavar='N', help='number of data loading workers (default: 16)')
     parser.add_argument('--lr', default=0.001, type=float, help='initial learning rate')
     parser.add_argument('--momentum', default=0.9, type=float, metavar='M', help='momentum')

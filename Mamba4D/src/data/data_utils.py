@@ -111,7 +111,7 @@ def generate_unique_key(json_item: List[str]) -> str:
 # ======================================================================
 def json_item_to_pcl_sequence(
     json_item: List[str],
-    synoff2cat: Dict[str, str],
+    folder_to_class: Dict[str, str],
     class_encoder: Dict[str, int],
     type_encoder: Dict[str, int],
     pad_token: str,
@@ -139,7 +139,7 @@ def json_item_to_pcl_sequence(
             point_clouds.append(data['pcl'])
             timestamps.append(data['timestamp'])
 
-            object_class = synoff2cat[file_path.split("/")[0]]
+            object_class = folder_to_class[file_path.split("/")[0]]
             object_classes.append(class_encoder[object_class])
             object_types.append(type_encoder[str(data['type'])])
             pad_frames.append(0)

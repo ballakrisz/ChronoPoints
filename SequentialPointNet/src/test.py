@@ -262,7 +262,7 @@ def main(args=None):
 
     #################改2#############
     data_val = PointSeriesDataset(
-        data_root_dir='/home/appuser/chronopoints_cls_benchmark',
+        data_root_dir='/home/appuser/LIFT_benchmark',
         split='test',
         max_points_per_frame=512,
         single_return_only=True,

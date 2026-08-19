@@ -31,12 +31,12 @@ def load_and_return_wrapper(args):
     Wrapper function to load a JSON item and convert it to a point cloud sequence.
     This function is used for multiprocessing to avoid pickling issues with the main dataset class.
     """
-    json_item, synoff2cat, class_encoder, type_encoder, pad_token, data_root_dir, max_points_per_frame, frame_interval, sampling_strategy, padding_strategy = args
+    json_item, folder_to_class, class_encoder, type_encoder, pad_token, data_root_dir, max_points_per_frame, frame_interval, sampling_strategy, padding_strategy = args
 
     key = generate_unique_key(json_item)
     dict_item = json_item_to_pcl_sequence(
         json_item=json_item,
-        synoff2cat=synoff2cat,
+        folder_to_class=folder_to_class,
         class_encoder=class_encoder,
         type_encoder=type_encoder,
         pad_token=pad_token,
@@ -166,17 +166,18 @@ class PointSeriesDataset(Dataset):
         self.augment = split == "train"
 
         # Load dictionaries for class encoding
-        self.synoff2cat = json.loads(Path(os.path.join(data_root_dir, "synsetoffset2category.json")).read_text())
-        self.cat2synoff = {v: k for k, v in self.synoff2cat.items()}
         self.type_encoder = json.loads(Path(os.path.join(data_root_dir, "type_encoder.json")).read_text())
-        self.type_decoder = {v: k for k, v in self.type_encoder.items()}
+        self.type_decoder = {
+            v: k for k, v in self.type_encoder.items()
+        }
         self.class_encoder = json.loads(Path(os.path.join(data_root_dir, "class_encoder.json")).read_text())
+        self.folder_to_class = {
+            "birds": "Bird",
+            "drones": "Drone",
+        }
         
         # Determine available classes/types by encoder index (>= 0)
-        self.available_classes = [
-            name for name, idx in self.class_encoder.items()
-            if idx >= 0
-        ]
+        self.available_classes = list(set(self.folder_to_class.values()))
         self.num_classes = len(self.available_classes)
 
         self.available_types = [
@@ -323,7 +324,7 @@ class PointSeriesDataset(Dataset):
     def _get_shared_context(self):
         """Returns the static context needed to convert json_items to pcl sequences"""
         return (
-            self.synoff2cat,
+            self.folder_to_class,
             self.class_encoder,
             self.type_encoder,
             self.pad_token,

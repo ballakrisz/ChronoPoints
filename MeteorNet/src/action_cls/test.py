@@ -85,7 +85,7 @@ FRAME_GAP_DICT = {
 config = "f{}g{}".format(FLAGS.num_frames, FRAME_GAP_DICT[FLAGS.num_frames])
 
 TEST_DATASET = PointSeriesDataset(
-    data_root_dir='/home/appuser/chronopoints_cls_benchmark',
+    data_root_dir='/home/appuser/LIFT_benchmark',
     split='test',
     max_points_per_frame=512,
     single_return_only=True,
