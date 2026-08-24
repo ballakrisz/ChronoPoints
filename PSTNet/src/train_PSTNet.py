@@ -36,13 +36,22 @@ FRAME_GAP_DICT = {
     20 : 2,
 }
 
-def train_one_epoch(model, criterion, optimizer, lr_scheduler, data_loader, device, epoch):
+def train_one_epoch(model, criterion, optimizer, lr_scheduler, data_loader, device, epoch, has_pbar=True):
     model.train()
     loss_sigma = 0.0
     num_classes = data_loader.dataset.num_types
     conf_mat = np.zeros((num_classes, num_classes))
     
-    for i, data in enumerate(tqdm(data_loader, 0)):
+    iterator = enumerate(data_loader)
+    
+    if has_pbar:
+        iterator = tqdm(
+            iterator,
+            total=len(data_loader),
+            desc=f"Epoch {epoch}"
+        )
+        
+    for i, data in iterator:
         clip, target, _ = data
         clip, target = clip.to(device), target.to(device)
         output = model(clip)
@@ -70,18 +79,28 @@ def train_one_epoch(model, criterion, optimizer, lr_scheduler, data_loader, devi
     mAcc = np.mean(class_acc)
     loss_avg = loss_sigma / len(data_loader)
     
-    print(f'[TRAIN] Epoch {epoch} | OA: {OA:.4f} | mAcc: {mAcc:.4f} | Loss: {loss_avg:.4f}')
-    logging.info(f'[TRAIN] Epoch {epoch} | OA: {OA:.4f} | mAcc: {mAcc:.4f} | Loss: {loss_avg:.4f}')
+    if has_pbar:
+        print(f'[TRAIN] Epoch {epoch} | OA: {OA:.4f} | mAcc: {mAcc:.4f} | Loss: {loss_avg:.4f}')
+        logging.info(f'[TRAIN] Epoch {epoch} | OA: {OA:.4f} | mAcc: {mAcc:.4f} | Loss: {loss_avg:.4f}')
 
 
-def evaluate(model, criterion, data_loader, device, epoch):
+def evaluate(model, criterion, data_loader, device, epoch, has_pbar=True):
     model.eval()
     num_classes = data_loader.dataset.num_types
     conf_mat = np.zeros((num_classes, num_classes))
     loss_sigma = 0.0
     
+    iterator = enumerate(data_loader)
+    
+    if has_pbar:
+        iterator = tqdm(
+            iterator,
+            total=len(data_loader),
+            desc=f"Epoch {epoch}"
+        )
+    
     with torch.no_grad():
-        for i, data in enumerate(tqdm(data_loader)):
+        for i, data in iterator:
             clip, target, _ = data
             clip = clip.to(device, non_blocking=True)
             target = target.to(device, non_blocking=True)
@@ -104,8 +123,9 @@ def evaluate(model, criterion, data_loader, device, epoch):
     mAcc = np.mean(class_acc)
     loss_avg = loss_sigma / len(data_loader)
     
-    print(f'[VAL] Epoch {epoch} | OA: {OA:.4f} | mAcc: {mAcc:.4f} | Loss: {loss_avg:.4f}')
-    logging.info(f'[VAL] Epoch {epoch} | OA: {OA:.4f} | mAcc: {mAcc:.4f} | Loss: {loss_avg:.4f}')
+    if has_pbar:
+        print(f'[VAL] Epoch {epoch} | OA: {OA:.4f} | mAcc: {mAcc:.4f} | Loss: {loss_avg:.4f}')
+        logging.info(f'[VAL] Epoch {epoch} | OA: {OA:.4f} | mAcc: {mAcc:.4f} | Loss: {loss_avg:.4f}')
     return mAcc
 
 
