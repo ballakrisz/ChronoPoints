@@ -60,7 +60,12 @@ RUN pip install \
     numpy \
     tqdm \
     scikit-learn \
-    matplotlib
+    matplotlib \
+    optuna \
+    optuna-dashboard \
+    kaleido \
+    pandas \
+    plotly 
     # torch==1.2.0 \
     # torchvision==0.4.0
 

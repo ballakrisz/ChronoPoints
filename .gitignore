@@ -3,4 +3,4 @@ __pycache__/
 *.pyc
 output/
 inference_comparison
-optuna*
+optuna_r*
