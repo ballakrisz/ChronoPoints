@@ -69,7 +69,12 @@ RUN pip install \
     open3d \
     timm \
     termcolor \
-    calflops
+    calflops \
+    optuna \
+    optuna-dashboard \
+    kaleido \
+    pandas \
+    plotly 
 
 # # install knn CUDA
 # RUN pip install --upgrade https://github.com/unlimblue/KNN_CUDA/releases/download/0.2/KNN_CUDA-0.2-py3-none-any.whl && \

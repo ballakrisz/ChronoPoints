@@ -37,7 +37,7 @@ FRAME_GAP_DICT = {
     20 : 2,
 }
 
-def train_one_epoch(model, criterion, optimizer, lr_scheduler, data_loader, device, epoch, print_freq):
+def train_one_epoch(model, criterion, optimizer, lr_scheduler, data_loader, device, epoch, print_freq=None, has_pbar=True):
     model.train()
 
     metric_logger = utils.MetricLogger(delimiter="  ")
@@ -55,8 +55,16 @@ def train_one_epoch(model, criterion, optimizer, lr_scheduler, data_loader, devi
     class_count = torch.zeros(num_classes, device=device)
     total_correct = 0
     total_samples = 0
+    
+    # Only use MetricLogger when progress output is wanted.
+    if has_pbar:
+        data_iterator = metric_logger.log_every(
+            data_loader, print_freq, header
+        )
+    else:
+        data_iterator = data_loader
 
-    for clip, target, _ in metric_logger.log_every(data_loader, print_freq, header):
+    for clip, target, _ in data_iterator:
         start_time = time.time()
 
         clip = clip.to(device)
@@ -89,13 +97,14 @@ def train_one_epoch(model, criterion, optimizer, lr_scheduler, data_loader, devi
 
         batch_size = clip.shape[0]
 
-        metric_logger.update(
-            loss=loss.item(),
-            lr=optimizer.param_groups[0]["lr"]
-        )
-        metric_logger.meters['OA'].update(OA, n=batch_size)
-        metric_logger.meters['mAcc'].update(mAcc, n=batch_size)
-        metric_logger.meters['clips/s'].update(batch_size / (time.time() - start_time))
+        if has_pbar:
+            metric_logger.update(
+                loss=loss.item(),
+                lr=optimizer.param_groups[0]["lr"]
+            )
+            metric_logger.meters['OA'].update(OA, n=batch_size)
+            metric_logger.meters['mAcc'].update(mAcc, n=batch_size)
+            metric_logger.meters['clips/s'].update(batch_size / (time.time() - start_time))
 
         lr_scheduler.step()
         sys.stdout.flush()
@@ -105,11 +114,12 @@ def train_one_epoch(model, criterion, optimizer, lr_scheduler, data_loader, devi
     final_class_acc = class_correct / (class_count + 1e-6)
     final_mAcc = final_class_acc.mean().item()
 
-    print(f' * Train OA {final_OA:.4f} mAcc {final_mAcc:.4f}')
-    logging.getLogger().info(f' EPOCH [{epoch}] | Train OA {final_OA:.4f} mAcc {final_mAcc:.4f}')
+    if has_pbar:
+        print(f' * Train OA {final_OA:.4f} mAcc {final_mAcc:.4f}')
+        logging.getLogger().info(f' EPOCH [{epoch}] | Train OA {final_OA:.4f} mAcc {final_mAcc:.4f}')
 
 
-def evaluate(model, criterion, data_loader, device):
+def evaluate(model, criterion, data_loader, device, has_pbar=True):
     model.eval()
 
     metric_logger = utils.MetricLogger(delimiter="  ")
@@ -124,9 +134,16 @@ def evaluate(model, criterion, data_loader, device):
     class_count = torch.zeros(num_classes, device=device)
     total_correct = 0
     total_samples = 0
+    
+    if has_pbar:
+        data_iterator = metric_logger.log_every(
+            data_loader, 100, header
+        )
+    else:
+        data_iterator = data_loader
 
     with torch.no_grad():
-        for clip, target, _ in metric_logger.log_every(data_loader, 100, header):
+        for clip, target, _ in data_iterator:
 
             clip = clip.to(device, non_blocking=True)
             target = target.to(device, non_blocking=True)
@@ -153,18 +170,20 @@ def evaluate(model, criterion, data_loader, device):
 
             batch_size = clip.shape[0]
 
-            metric_logger.update(loss=loss.item())
-            metric_logger.meters['OA'].update(OA, n=batch_size)
-            metric_logger.meters['mAcc'].update(mAcc, n=batch_size)
+            if has_pbar:
+                metric_logger.update(loss=loss.item())
+                metric_logger.meters['OA'].update(OA, n=batch_size)
+                metric_logger.meters['mAcc'].update(mAcc, n=batch_size)
 
-    metric_logger.synchronize_between_processes()
 
     final_OA = total_correct / max(total_samples, 1)
     final_class_acc = class_correct / (class_count + 1e-6)
     final_mAcc = final_class_acc.mean().item()
 
-    print(f' * Eval OA {final_OA:.4f} mAcc {final_mAcc:.4f}')
-    logging.getLogger().info(f' * Eval OA {final_OA:.4f} mAcc {final_mAcc:.4f}')
+    if has_pbar:
+        metric_logger.synchronize_between_processes()
+        print(f' * Eval OA {final_OA:.4f} mAcc {final_mAcc:.4f}')
+        logging.getLogger().info(f' * Eval OA {final_OA:.4f} mAcc {final_mAcc:.4f}')
 
     return final_mAcc
 
@@ -349,14 +368,14 @@ def parse_args():
     parser.add_argument('--emb-relu', default=False, action='store_true')
     # training
     parser.add_argument('-b', '--batch-size', default=8, type=int)
-    parser.add_argument('--epochs', default=100, type=int, metavar='N', help='number of total epochs to run')
+    parser.add_argument('--epochs', default=50, type=int, metavar='N', help='number of total epochs to run')
     parser.add_argument('-j', '--workers', default=4, type=int, metavar='N', help='number of data loading workers (default: 16)')
     parser.add_argument('--lr', default=0.001, type=float, help='initial learning rate')#0.01
     parser.add_argument('--momentum', default=0.9, type=float, metavar='M', help='momentum')
     parser.add_argument('--wd', '--weight-decay', default=1e-4, type=float, metavar='W', help='weight decay (default: 1e-4)', dest='weight_decay')#1e-4
     parser.add_argument('--lr-milestones', nargs='+', default=[20, 30], type=int, help='decrease lr on milestones')
     parser.add_argument('--lr-gamma', default=0.1, type=float, help='decrease lr by a factor of lr-gamma')
-    parser.add_argument('--lr-warmup-epochs', default=10, type=int, help='number of warmup epochs')
+    parser.add_argument('--lr-warmup-epochs', default=5, type=int, help='number of warmup epochs')
     # mamba
     parser.add_argument('--dim', default=1024, type=int, help='transformer dim')
     parser.add_argument('--depth-mamba-inter', default=4, type=int)
