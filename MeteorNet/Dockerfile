@@ -58,7 +58,10 @@ RUN apt-get update && \
 # Install Python dependencies (we use the same dataset for all )
 RUN pip install \
     torch \
-    tqdm
+    tqdm \
+    optuna==1.1.0 \
+    pandas \
+    sqlalchemy
 
 # start as appuser
 USER appuser

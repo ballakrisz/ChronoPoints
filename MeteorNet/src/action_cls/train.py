@@ -36,12 +36,16 @@ parser.add_argument('--skip_frames', type=int, default=1, help='Skip frames [def
 parser.add_argument('--max_epoch', type=int, default=251, help='Epoch to run [default: 251]')
 parser.add_argument('--batch_size', type=int, default=32, help='Batch Size during training [default: 16]')
 parser.add_argument('--learning_rate', type=float, default=0.001, help='Initial learning rate [default: 0.001]')
+parser.add_argument('--weight_decay', type=float, default=0.0,
+                    help='L2 regularization coefficient')
 parser.add_argument('--momentum', type=float, default=0.9, help='Initial learning rate [default: 0.9]')
 parser.add_argument('--optimizer', default='adam', help='adam or momentum [default: adam]')
 parser.add_argument('--decay_step', type=int, default=200000, help='Decay step for lr decay [default: 200000]')
 parser.add_argument('--decay_rate', type=float, default=0.7, help='Decay rate for lr decay [default: 0.7]')
 parser.add_argument('--command_file', default=None, help='Command file name [default: None]')
 FLAGS = parser.parse_args()
+
+print(FLAGS.weight_decay)
 
 EPOCH_CNT = 0
 os.environ['CUDA_VISIBLE_DEVICES'] = str(FLAGS.gpu)
@@ -53,6 +57,7 @@ DATA = FLAGS.data
 SKIP_FRAME = FLAGS.skip_frames
 MAX_EPOCH = FLAGS.max_epoch
 BASE_LEARNING_RATE = FLAGS.learning_rate
+WEIGHT_DECAY = FLAGS.weight_decay
 GPU_INDEX = FLAGS.gpu
 MOMENTUM = FLAGS.momentum
 OPTIMIZER = FLAGS.optimizer
@@ -166,6 +171,13 @@ def train():
             MODEL.get_loss(pred, labels_pl, end_points)
             losses = tf.get_collection('losses')
             total_loss = tf.add_n(losses, name='total_loss')
+            
+            # Add L2 regularization
+            if WEIGHT_DECAY > 0:
+                l2_loss = WEIGHT_DECAY * tf.add_n([tf.nn.l2_loss(v) for v in tf.trainable_variables()])
+                total_loss = total_loss + l2_loss
+                tf.summary.scalar('l2_loss', l2_loss)    
+            
             tf.summary.scalar('total_loss', total_loss)
             for l in losses:
                 tf.summary.scalar(l.op.name, l)
