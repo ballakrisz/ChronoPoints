@@ -1,0 +1,10 @@
+# ninja log v5
+2	23169	1787736011465728554	/home/appuser/src/modules/build/temp.linux-x86_64-3.7/_ext_src/src/group_points_gpu.o	56098a69358df610
+17	24208	1787736012484718433	/home/appuser/src/modules/build/temp.linux-x86_64-3.7/_ext_src/src/sampling_gpu.o	19cb32fb283db139
+13	28824	1787736017124672342	/home/appuser/src/modules/build/temp.linux-x86_64-3.7/_ext_src/src/ball_query_gpu.o	5eedf98e00a15cd1
+2	30093	1787736018394659725	/home/appuser/src/modules/build/temp.linux-x86_64-3.7/_ext_src/src/interpolate_gpu.o	b9d6442e8a087469
+1	38821	1787736027119573038	/home/appuser/src/modules/build/temp.linux-x86_64-3.7/_ext_src/src/group_points.o	c58cab63fec5e973
+2	39508	1787736027805566221	/home/appuser/src/modules/build/temp.linux-x86_64-3.7/_ext_src/src/sampling.o	c9495ec358c70efb
+1	39785	1787736028084563449	/home/appuser/src/modules/build/temp.linux-x86_64-3.7/_ext_src/src/interpolate.o	b264fee283084885
+0	39962	1787736028265561650	/home/appuser/src/modules/build/temp.linux-x86_64-3.7/_ext_src/src/ball_query.o	4cee557a71b14249
+2	41901	1787736030201542413	/home/appuser/src/modules/build/temp.linux-x86_64-3.7/_ext_src/src/bindings.o	2837bf6432ff82cd

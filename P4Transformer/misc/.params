@@ -1,0 +1,5 @@
+image_name="p4transformer_cls"
+image_tag="latest"
+container_name="p4transformer_cls"
+src_folder="./src"
+dataset_folder="$(realpath ../dataset/LIFT_benchmark)"
