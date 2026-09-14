@@ -13,6 +13,7 @@ import torchvision
 from torchvision import transforms
 from tqdm import tqdm
 import logging
+import random
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__))) # Add the current file's directory to sys.path
 
@@ -83,6 +84,10 @@ def train_one_epoch(model, criterion, optimizer, lr_scheduler, data_loader, devi
         print(f'[TRAIN] Epoch {epoch} | OA: {OA:.4f} | mAcc: {mAcc:.4f} | Loss: {loss_avg:.4f}')
         logging.info(f'[TRAIN] Epoch {epoch} | OA: {OA:.4f} | mAcc: {mAcc:.4f} | Loss: {loss_avg:.4f}')
 
+def seed_worker(worker_id):
+    worker_seed = torch.initial_seed() % 2**32
+    np.random.seed(worker_seed)
+    random.seed(worker_seed)
 
 def evaluate(model, criterion, data_loader, device, epoch, has_pbar=True):
     model.eval()
@@ -135,7 +140,7 @@ def main(args):
     config = f"f{args.clip_len}g{num_gap}"
     
     if args.output_dir:
-        args.output_dir = f"{args.output_dir}/{config}_seed_{args.seed}"
+        args.output_dir = f"{args.output_dir}/{config}_seed_{args.seed}_optimized"
         utils.mkdir(args.output_dir)
 
     logging.basicConfig(
@@ -191,9 +196,10 @@ def main(args):
 
     print("Creating data loaders")
 
-    data_loader = torch.utils.data.DataLoader(dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.workers, pin_memory=True)
+    data_loader = torch.utils.data.DataLoader(dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.workers,worker_init_fn=seed_worker, pin_memory=True)
 
-    data_loader_val = torch.utils.data.DataLoader(dataset_val, batch_size=args.batch_size, num_workers=args.workers, pin_memory=True)
+    data_loader_val = torch.utils.data.DataLoader(dataset_val, batch_size=args.batch_size, num_workers=args.workers, pin_memory=True,
+    worker_init_fn=lambda worker_id: np.random.seed(42 + worker_id))
 
     print("Creating model")
     Model = getattr(Models, args.model)
@@ -205,7 +211,8 @@ def main(args):
     criterion = nn.CrossEntropyLoss()
 
     lr = args.lr
-    optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=args.momentum, weight_decay=args.weight_decay)
+    # optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=args.momentum, weight_decay=args.weight_decay)
+    optimizer = torch.optim.Adam(model.parameters(),lr=lr, weight_decay=args.weight_decay)
 
     # convert scheduler to be per iteration, not per epoch, for warmup that lasts
     # between different epochs
@@ -279,14 +286,14 @@ def parse_args():
     parser.add_argument('--frame-interval', default=1, type=int, metavar='N', help='interval between sampled frames')
     parser.add_argument('--num-points', default=512, type=int, metavar='N', help='number of points per frame')
     parser.add_argument('-b', '--batch-size', default=16, type=int)
-    parser.add_argument('--epochs', default=200, type=int, metavar='N', help='number of total epochs to run')
-    parser.add_argument('-j', '--workers', default=10, type=int, metavar='N', help='number of data loading workers (default: 16)')
-    parser.add_argument('--lr', default=0.001, type=float, help='initial learning rate')
+    parser.add_argument('--epochs', default=100, type=int, metavar='N', help='number of total epochs to run')
+    parser.add_argument('-j', '--workers', default=4, type=int, metavar='N', help='number of data loading workers (default: 16)')
+    parser.add_argument('--lr', default=0.00019740104949734238, type=float, help='initial learning rate')
     parser.add_argument('--momentum', default=0.9, type=float, metavar='M', help='momentum')
-    parser.add_argument('--wd', '--weight-decay', default=1e-4, type=float, metavar='W', help='weight decay (default: 1e-4)', dest='weight_decay')
+    parser.add_argument('--wd', '--weight-decay', default=0.018788303836919453, type=float, metavar='W', help='weight decay (default: 1e-4)', dest='weight_decay')
     parser.add_argument('--lr-milestones', nargs='+', default=[20, 30], type=int, help='decrease lr on milestones')
     parser.add_argument('--lr-gamma', default=0.1, type=float, help='decrease lr by a factor of lr-gamma')
-    parser.add_argument('--lr-warmup-epochs', default=10, type=int, help='number of warmup epochs')
+    parser.add_argument('--lr-warmup-epochs', default=5, type=int, help='number of warmup epochs')
     parser.add_argument('--print-freq', default=10, type=int, help='print frequency')
     parser.add_argument('--output-dir', default='output', type=str, help='path where to save')
     parser.add_argument('--resume', default='', help='resume from checkpoint')

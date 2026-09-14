@@ -12,6 +12,7 @@ from tqdm import tqdm
 import torch.nn as nn
 import random
 
+
 from optuna.visualization import (
     plot_parallel_coordinate,
     plot_param_importances,
@@ -24,10 +25,11 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 import utils
+from scheduler import WarmupMultiStepLR
 import models.msr as Models
 from data.dataset import PointSeriesDataset
 
-from train_mambda4d import (
+from train_mamba4d import (
     FRAME_GAP_DICT,
     train_one_epoch,
     evaluate
@@ -62,7 +64,7 @@ def parse_args():
     parser.add_argument('--wd', '--weight-decay', default=1e-4, type=float, metavar='W', help='weight decay (default: 1e-4)', dest='weight_decay')#1e-4
     parser.add_argument('--lr-milestones', nargs='+', default=[20, 30], type=int, help='decrease lr on milestones')
     parser.add_argument('--lr-gamma', default=0.1, type=float, help='decrease lr by a factor of lr-gamma')
-    parser.add_argument('--lr-warmup-epochs', default=10, type=int, help='number of warmup epochs')
+    parser.add_argument('--lr-warmup-epochs', default=5, type=int, help='number of warmup epochs')
     # mamba
     parser.add_argument('--dim', default=1024, type=int, help='transformer dim')
     parser.add_argument('--depth-mamba-inter', default=4, type=int)
@@ -106,7 +108,7 @@ SEED = 0 # TODO: SET TO 0
 
 EPOCHS = 30
 
-BATCH_SIZE = 16
+BATCH_SIZE = 8
 NUM_WORKERS = 4
 
 N_TRIALS = 50
@@ -237,10 +239,11 @@ def objective(trial):
     model = Model(radius=args.radius, nsamples=args.nsamples, spatial_stride=args.spatial_stride,
                   temporal_kernel_size=args.temporal_kernel_size, temporal_stride=args.temporal_stride,
                   emb_relu=args.emb_relu,
-                  dim=args.dim,mlp_dim=args.mlp_dim, num_classes=dataset.num_types,
+                  dim=args.dim,mlp_dim=args.mlp_dim, num_classes=train_dataset.num_types,
                   depth_mamba_inter=args.depth_mamba_inter, rms_norm=args.rms_norm,
                   drop_out_in_block=args.drop_out_in_block, drop_path=args.drop_path,
                   depth_mamba_intra=args.depth_mamba_intra, intra=args.intra)
+    model.to(DEVICE)
 
     # --------------------------------------------------------
     # LOSSES
@@ -274,8 +277,8 @@ def objective(trial):
             weight_decay=weight_decay
         )
 
-    warmup_iters = args.lr_warmup_epochs * len(data_loader)
-    lr_milestones = [len(data_loader) * m for m in args.lr_milestones]
+    warmup_iters = args.lr_warmup_epochs * len(train_loader)
+    lr_milestones = [len(train_loader) * m for m in args.lr_milestones]
     lr_scheduler = WarmupMultiStepLR(optimizer, milestones=lr_milestones, gamma=args.lr_gamma, warmup_iters=warmup_iters, warmup_factor=1e-5)
 
     # --------------------------------------------------------

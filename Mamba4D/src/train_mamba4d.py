@@ -292,8 +292,13 @@ def main(args):
     criterion = nn.CrossEntropyLoss()
 
     lr = args.lr
-    optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=args.momentum, weight_decay=args.weight_decay)
+    # optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=args.momentum, weight_decay=args.weight_decay)
 
+    optimizer = torch.optim.Adam(
+        model.parameters(),
+        lr=lr,
+        weight_decay=args.weight_decay
+    )
     # convert scheduler to be per iteration, not per epoch, for warmup that lasts
     # between different epochs
     warmup_iters = args.lr_warmup_epochs * len(data_loader)
@@ -368,11 +373,11 @@ def parse_args():
     parser.add_argument('--emb-relu', default=False, action='store_true')
     # training
     parser.add_argument('-b', '--batch-size', default=8, type=int)
-    parser.add_argument('--epochs', default=50, type=int, metavar='N', help='number of total epochs to run')
+    parser.add_argument('--epochs', default=30, type=int, metavar='N', help='number of total epochs to run')
     parser.add_argument('-j', '--workers', default=4, type=int, metavar='N', help='number of data loading workers (default: 16)')
-    parser.add_argument('--lr', default=0.001, type=float, help='initial learning rate')#0.01
+    parser.add_argument('--lr', default=0.0003724204444012107, type=float, help='initial learning rate')#0.01
     parser.add_argument('--momentum', default=0.9, type=float, metavar='M', help='momentum')
-    parser.add_argument('--wd', '--weight-decay', default=1e-4, type=float, metavar='W', help='weight decay (default: 1e-4)', dest='weight_decay')#1e-4
+    parser.add_argument('--wd', '--weight-decay', default=0.0021118419170481784, type=float, metavar='W', help='weight decay (default: 1e-4)', dest='weight_decay')#1e-4
     parser.add_argument('--lr-milestones', nargs='+', default=[20, 30], type=int, help='decrease lr on milestones')
     parser.add_argument('--lr-gamma', default=0.1, type=float, help='decrease lr by a factor of lr-gamma')
     parser.add_argument('--lr-warmup-epochs', default=5, type=int, help='number of warmup epochs')

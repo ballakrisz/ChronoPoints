@@ -11,6 +11,8 @@ import pandas as pd
 from tqdm import tqdm
 import torch.nn as nn
 
+import random
+
 from optuna.visualization import (
     plot_parallel_coordinate,
     plot_param_importances,
@@ -31,6 +33,12 @@ from train_PSTNet import (
     train_one_epoch,
     evaluate
 )
+
+def seed_worker(worker_id):
+    worker_seed = torch.initial_seed() % 2**32
+    np.random.seed(worker_seed)
+    random.seed(worker_seed)
+
 
 # ============================================================
 # CONFIG
@@ -154,7 +162,8 @@ def objective(trial):
         train_dataset,
         batch_size=BATCH_SIZE,
         shuffle=True,
-        num_workers=NUM_WORKERS
+        num_workers=NUM_WORKERS,
+        worker_init_fn=seed_worker,
     )
 
     val_loader = torch.utils.data.DataLoader(
