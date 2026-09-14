@@ -203,7 +203,7 @@ def main(args=None):
     parser.add_argument('--clip-len', default=16, type=int, metavar='N', help='number of frames per clip')
     parser.add_argument('--num-points', default=512, type=int, metavar='N', help='number of points per frame')
     parser.add_argument('-b', '--batch-size', default=16, type=int)
-    parser.add_argument('-j', '--workers', default=10, type=int, metavar='N', help='number of data loading workers')
+    parser.add_argument('-j', '--workers', default=4, type=int, metavar='N', help='number of data loading workers')
     parser.add_argument('--seed', default=0, type=int, help='random seed')
     
     # Path args
@@ -219,7 +219,7 @@ def main(args=None):
     opt.config = config
     
     # Create run directory like second file
-    run_dir = os.path.join(opt.save_root_dir, f"{config}_seed_{opt.seed}")
+    run_dir = os.path.join(opt.save_root_dir, f"{config}_seed_{opt.seed}_optimized")
     os.makedirs(run_dir, exist_ok=True)
     opt.save_root_dir = run_dir
     
