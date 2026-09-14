@@ -65,7 +65,8 @@ RUN pip install \
     optuna-dashboard \
     kaleido \
     pandas \
-    plotly 
+    plotly \
+    thop
     # torch==1.2.0 \
     # torchvision==0.4.0
 
