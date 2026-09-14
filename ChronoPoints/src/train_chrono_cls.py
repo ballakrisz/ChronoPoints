@@ -98,7 +98,7 @@ def train_one_epoch(classifier, dataloader, cls_loss, contrastive_loss,contrasti
             desc=f"Epoch {epoch}"
         )
 
-    for batch_id, (pcl_seq, masks, velocities, stamps, class_labels, type_labels) in iterator:
+    for batch_id, (pcl_seq, masks, velocities, stamps, class_labels, type_labels,_,_) in iterator:
         pcl_sequence = pcl_seq.to(device, non_blocking=True)
         mask = masks.to(device, non_blocking=True)
         velocities = velocities.to(device, non_blocking=True)
@@ -110,10 +110,10 @@ def train_one_epoch(classifier, dataloader, cls_loss, contrastive_loss,contrasti
 
         # CE loss
         loss_cls = cls_loss(logits, labels)
-        # loss_contrastive = contrastive_loss(p_dist=p_dist, p_traj=p_traj, p_spatio=p_spatio)
+        loss_contrastive = contrastive_loss(p_dist=p_dist, p_traj=p_traj, p_spatio=p_spatio)
         
         # combined objective
-        loss = loss_cls #+ contrastive_lambda * loss_contrastive
+        loss = loss_cls + contrastive_lambda * loss_contrastive
 
 
         # Backprop
@@ -161,7 +161,7 @@ def evaluate(classifier, dataloader, loss_fn, device):
     class_total = torch.zeros(num_classes, dtype=torch.long)
 
     with torch.no_grad():
-        for pcl_seq, masks, velocities, stamps, class_labels, type_labels in dataloader:
+        for pcl_seq, masks, velocities, stamps, class_labels, type_labels,_,_ in dataloader:
             pcl_sequence = pcl_seq.to(device, non_blocking=True)
             mask = masks.to(device, non_blocking=True)
             velocities = velocities.to(device, non_blocking=True)
@@ -210,7 +210,7 @@ def parse_args():
     parser.add_argument('--weight_decay', type=float, default=1e-4, help='Weight decay for the optimizer')
     parser.add_argument('--seed', type=int, default=None, help='Random seed for reproducibility')
     parser.add_argument('--poly_order', type=int, default=3, help='Polynomial order for the trajectory encoder')
-    parser.add_argument('--K', type=int, default=128, help='Memory Queue size')
+    parser.add_argument('--K', type=int, default=512, help='Memory Queue size')
     parser.add_argument('--warmup_epochs', type=int, default=10, help='Number of epochs for learning rate warmup')
     parser.add_argument('--warmup_factor', type=float, default=1e-5, help='Initial LR = warmup_factor * base_lr')
     
@@ -221,7 +221,7 @@ def parse_args():
     parser.add_argument('--resume', type=str, default=None, help='Path to a run directory to resume training from.')
 
     # Dataset
-    parser.add_argument('--data_root', type=str, default='/home/appuser/LIFT_benchmark', help="Root directory of the chrono_points_cls_benchmark dataset")
+    parser.add_argument('--data_root', type=str, default='/home/appuser/LIFT_benchmark', help="Root directory of the LIFT_benchmark dataset")
 
     # Point cloud sequence
     parser.add_argument('--num_frame', type=int, default=None, help='Number of frames in each point cloud sequence.')
@@ -426,8 +426,8 @@ def main():
 
     # Loss
     cls_loss = torch.nn.CrossEntropyLoss()
-    contrastive_loss = CrossEncoderContrastiveLoss(temperature=args.temperature).to(device)
-    # contrastive_loss = CrossEncoderContrastiveLossWithQueue(temperature=args.temperature, queue_size=args.K).to(device)
+    # contrastive_loss = CrossEncoderContrastiveLoss(temperature=args.temperature).to(device)
+    contrastive_loss = CrossEncoderContrastiveLossWithQueue(temperature=args.temperature, queue_size=args.K).to(device)
     contrastive_lambda = args.contrastive_lambda
 
     optimizer = torch.optim.Adam(
@@ -462,7 +462,7 @@ def main():
         scheduler.load_state_dict(state['scheduler_state_dict'])
 
     # -------------------------
-    # TRAIN LOOP (UNCHANGED LOGIC)
+    # TRAIN LOOP 
     # -------------------------
     for epoch in range(start_epoch, args.epochs + 1):
 
@@ -479,7 +479,7 @@ def main():
                     f"LR={optimizer.param_groups[0]['lr']:.6f}")
 
         # -------------------------
-        # VALIDATION (UNCHANGED)
+        # VALIDATION 
         # -------------------------
         if epoch % val_freq == 0:
 
