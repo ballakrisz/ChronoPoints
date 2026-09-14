@@ -111,7 +111,7 @@ def generate_unique_key(json_item: List[str]) -> str:
 # ======================================================================
 def json_item_to_pcl_sequence(
     json_item: List[str],
-    synoff2cat: Dict[str, str],
+    folder_to_class: Dict[str, str],
     class_encoder: Dict[str, int],
     type_encoder: Dict[str, int],
     pad_token: str,
@@ -138,15 +138,27 @@ def json_item_to_pcl_sequence(
             data = np.load(os.path.join(data_root_dir, file_path))
             point_clouds.append(data['pcl'])
             timestamps.append(data['timestamp'])
-
-            object_class = synoff2cat[file_path.split("/")[0]]
-            object_classes.append(class_encoder[object_class])
+            
+            folder_name = file_path.split("/")[0]
+            class_name = folder_to_class.get(folder_name, folder_name.capitalize())
+            object_classes.append(class_encoder[class_name])
             object_types.append(type_encoder[str(data['type'])])
             pad_frames.append(0)
             curr_stamp = data['timestamp']
             data.close()
 
         last_stamp = curr_stamp
+
+    raw_counts = []
+    raw_centroids = []
+    for pc in point_clouds:
+        if len(pc) == 0:
+            raw_counts.append(0)
+            raw_centroids.append(np.zeros(3, dtype=np.float32))
+        else:
+            raw_counts.append(len(pc))
+            raw_centroids.append(np.mean(pc[:, :3], axis=0))   # assuming xyz first 3 cols
+
 
     padded_point_clouds, masks, velocities = sample_and_pad(
         point_sequence=point_clouds,
@@ -181,6 +193,8 @@ def json_item_to_pcl_sequence(
         'timestamps': np.array(timestamps, dtype=np.int64),
         'object_class': seq_class,
         'object_type': seq_type,
+        'raw_counts': np.array(raw_counts, dtype=np.int64),
+        'raw_centroids': np.array(raw_centroids, dtype=np.float32),   # (T, 3)
     }
 
 

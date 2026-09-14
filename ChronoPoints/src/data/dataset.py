@@ -31,12 +31,12 @@ def load_and_return_wrapper(args):
     Wrapper function to load a JSON item and convert it to a point cloud sequence.
     This function is used for multiprocessing to avoid pickling issues with the main dataset class.
     """
-    json_item, synoff2cat, class_encoder, type_encoder, pad_token, data_root_dir, max_points_per_frame, frame_interval, sampling_strategy, padding_strategy = args
+    json_item, folder_to_class, class_encoder, type_encoder, pad_token, data_root_dir, max_points_per_frame, frame_interval, sampling_strategy, padding_strategy = args
 
     key = generate_unique_key(json_item)
     dict_item = json_item_to_pcl_sequence(
         json_item=json_item,
-        synoff2cat=synoff2cat,
+        folder_to_class=folder_to_class,
         class_encoder=class_encoder,
         type_encoder=type_encoder,
         pad_token=pad_token,
@@ -163,19 +163,21 @@ class PointSeriesDataset(Dataset):
         self.sampling_strategy = sampling_strategy
         self.padding_strategy = padding_strategy
         self.sequence_format = sequence_format
-        self.augment = split == "train"
+        self.augment = split == "test"
 
         # Load dictionaries for class encoding
-        self.synoff2cat = json.loads(Path(os.path.join(data_root_dir, "synsetoffset2category.json")).read_text())
-        self.cat2synoff = {v: k for k, v in self.synoff2cat.items()}
         self.type_encoder = json.loads(Path(os.path.join(data_root_dir, "type_encoder.json")).read_text())
+        self.type_decoder = {
+            v: k for k, v in self.type_encoder.items()
+        }
         self.class_encoder = json.loads(Path(os.path.join(data_root_dir, "class_encoder.json")).read_text())
+        self.folder_to_class = {
+            "birds": "Bird",
+            "drones": "Drone",
+        }
         
         # Determine available classes/types by encoder index (>= 0)
-        self.available_classes = [
-            name for name, idx in self.class_encoder.items()
-            if idx >= 0
-        ]
+        self.available_classes = list(set(self.folder_to_class.values()))
         self.num_classes = len(self.available_classes)
 
         self.available_types = [
@@ -198,6 +200,7 @@ class PointSeriesDataset(Dataset):
 
         print(f"Split '{split}' loaded with available classes: {self.available_classes} and types: {self.available_types}")
         print(f'The {split} dataset contains {len(self.data_dict)} point cloud sequences')
+        # self.query_sample_distribution()
         
 
 
@@ -291,8 +294,8 @@ class PointSeriesDataset(Dataset):
         # ------------------ Count types ------------------
         type_counts = Counter()
         for sample in self:
-            _, _, _, _, type_label = sample
-            type_counts[type_label] += 1
+            _, _,_, _, _, type_label = sample
+            type_counts[type_label.item()] += 1
 
         print("\n=========== Type Distribution ===========")
         for type_name, type_id in self.type_encoder.items():
@@ -304,8 +307,8 @@ class PointSeriesDataset(Dataset):
         # ------------------ Count classes ------------------
         class_counts = Counter()
         for sample in self:
-            _, _, _, class_label, _ = sample
-            class_counts[class_label] += 1
+            _, _,_, _, class_label, _ = sample
+            class_counts[class_label.item()] += 1
 
         print("\n=========== Class Distribution ===========")
         for class_name, class_id in self.class_encoder.items():
@@ -322,7 +325,7 @@ class PointSeriesDataset(Dataset):
     def _get_shared_context(self):
         """Returns the static context needed to convert json_items to pcl sequences"""
         return (
-            self.synoff2cat,
+            self.folder_to_class,
             self.class_encoder,
             self.type_encoder,
             self.pad_token,
@@ -416,6 +419,9 @@ class PointSeriesDataset(Dataset):
         timestamps = torch.tensor(timestamps, dtype=torch.float32) / 1e6  # convert to milliseconds (T,)
         object_class = torch.tensor(dict_item['object_class'], dtype=torch.long) # (1,)
         object_type = torch.tensor(dict_item['object_type'], dtype=torch.long) # (1,)
+        
+        raw_counts = torch.tensor(dict_item['raw_counts'], dtype=torch.long)
+        raw_centroids = torch.tensor(dict_item['raw_centroids'], dtype=torch.float32)
 
         return (
             point_seq_torch,
@@ -424,6 +430,8 @@ class PointSeriesDataset(Dataset):
             timestamps,
             object_class,
             object_type,
+            raw_counts,
+            raw_centroids
         )
 
 

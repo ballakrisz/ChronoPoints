@@ -196,15 +196,8 @@ class FarthestPointSampling(SamplingStrategy):
 
     def sample(self, point_sequence, num_samples, seed=None):
         """
-        Perform farthest point sampling per frame with zero-padding and masks.
-
-        Args:
-            point_sequence: List of np.ndarray, each shape (N_i, F)
-            num_samples: Number of points to sample per frame
-            seed: Optional int random seed for reproducibility
-
-        Returns:
-            sampled_points: List of np.ndarray, each shape (num_samples, F)
+        Perform farthest point sampling per frame using XYZ coordinates only.
+        The returned points retain all original features (e.g. intensity).
         """
         if seed is not None:
             np.random.seed(seed)
@@ -213,17 +206,20 @@ class FarthestPointSampling(SamplingStrategy):
 
         for points in point_sequence:
             N, F = points.shape
+
             if N <= num_samples:
                 selected = points
             else:
-                sampled_indices = np.zeros(num_samples, dtype=int)
+                xyz = points[:, :3]
+
+                sampled_indices = np.empty(num_samples, dtype=np.int64)
                 sampled_indices[0] = np.random.randint(N)
 
                 distances = np.full(N, np.inf)
 
                 for i in range(1, num_samples):
-                    current_point = points[sampled_indices[i - 1]]
-                    dists = np.linalg.norm(points - current_point, axis=1)
+                    current_point = xyz[sampled_indices[i - 1]]
+                    dists = np.linalg.norm(xyz - current_point, axis=1)
                     distances = np.minimum(distances, dists)
                     sampled_indices[i] = np.argmax(distances)
 
@@ -231,7 +227,7 @@ class FarthestPointSampling(SamplingStrategy):
 
             sampled_points.append(selected)
 
-        return sampled_points  
+        return sampled_points
 
 
 
@@ -407,7 +403,7 @@ def normalize_sequence(pcl_seq_orig, pad_frames):
     Normalize a sequence of point clouds that include (x, y, z, intensity).
 
     - xyz are normalized together (global unit sphere)
-    - intensity is divided by 255
+    - intensity is divided by 150
     """
     # Only consider non-padded frames for computing normalization stats (padded frames are handled after normalization, so that they don't affect the true distribution)
     pcl_seq = [np.asarray(pc) for pc, pad in zip(pcl_seq_orig, pad_frames) if pad == 0]
@@ -424,7 +420,7 @@ def normalize_sequence(pcl_seq_orig, pad_frames):
             norm_seq.append(pc)
             continue
         xyz = (pc[:, :3] - centroid) / (m + 1e-8)
-        intensity = pc[:, 3:] / 255.0
+        intensity = pc[:, 3:] / 150.0
         pc_norm = np.hstack([xyz, intensity])
         norm_seq.append(pc_norm)
 
@@ -499,6 +495,7 @@ def detect_and_visualize_true_outliers(pcl_sequence, pad_frames, json_item, fact
                 outlier_points = xyz[mask]
                 if len(outlier_points) > 0:
                     print(f"Outlier(s) in frame {json_item[i]} at coords:  {outlier_points}")
+                    
 
     # --- Visualization ---
     if show and has_outliers:
