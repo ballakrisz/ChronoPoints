@@ -8,7 +8,7 @@ import argparse
 import time
 from calflops import calculate_flops
 
-
+import os
 import logging
 
 from pathlib import Path
@@ -255,6 +255,9 @@ def evaluate(model, criterion, data_loader, device, label_decoder=None):
     print(f"Overall Accuracy (OA): {overall_acc:.4f}")
     print(f"Mean Accuracy (mAcc):  {mean_acc:.4f}")
 
+    logging.info('Overall Accuracy (OA): %s', overall_acc)
+    logging.info('Mean Accuracy (mAcc): %s', mean_acc)
+
     print("\n--- Inference Performance ---")
     print(f"Total inference time:         {total_inference_time:.4f} s")
     print(f"Average inference per sample: {avg_inference_time_ms:.4f} ms")
@@ -286,6 +289,10 @@ def evaluate(model, criterion, data_loader, device, label_decoder=None):
     print(f"Micro Recall:    {micro_recall:.4f}")
     print(f"Micro F1:        {micro_f1:.4f}")
 
+    logging.info('Macro Precision: %s', macro_precision)
+    logging.info('Macro Recall: %s', macro_recall)
+    logging.info('Macro F1: %s', macro_f1)
+
     print("\n--- Confusion Matrix (counts) ---")
     print(confusion_counts)
 
@@ -302,12 +309,21 @@ def main(ckpt):
     
     args = checkpoint['args']
 
+    logging.basicConfig(filename=os.path.join(args.output_dir, 'test.log'), level=logging.INFO,\
+                                format='%(asctime)s - %(levelname)s - %(message)s', datefmt='%d-%b-%y %H:%M:%S')
+    logger = logging.getLogger()
+    
     # reproducibility
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed(args.seed)
 
+    logger.info("Arguments:")
+    for key, value in vars(args).items():
+        logger.info("  %s: %s", key, value)
+
     print("Loading TEST dataset...")
+    logger.info("Loading TEST dataset...")
 
     dataset_test = PointSeriesDataset(
         data_root_dir='/home/appuser/LIFT_benchmark',
@@ -328,6 +344,7 @@ def main(ckpt):
     )
 
     print("Creating model...")
+    logger.info("Creating model...")
     Model = getattr(Models, args.model)
 
     model = Model(

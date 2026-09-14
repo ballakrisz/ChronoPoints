@@ -69,12 +69,7 @@ RUN pip install \
     open3d \
     timm \
     termcolor \
-    calflops \
-    optuna \
-    optuna-dashboard \
-    kaleido \
-    pandas \
-    plotly 
+    calflops 
 
 # # install knn CUDA
 # RUN pip install --upgrade https://github.com/unlimblue/KNN_CUDA/releases/download/0.2/KNN_CUDA-0.2-py3-none-any.whl && \
@@ -113,6 +108,14 @@ RUN git clone --branch v1.2.0 --depth 1 https://github.com/state-spaces/mamba.gi
     }' setup.py > setup_tmp.py && mv setup_tmp.py setup.py && cat setup.py && \
     MAMBA_FORCE_BUILD=TRUE pip install . --no-build-isolation && \
     cd .. && rm -rf mamba
+
+USER root
+RUN pip install \
+    optuna \
+    optuna-dashboard \
+    kaleido \
+    pandas \
+    plotly 
 
 # Start as appuser
 USER appuser
