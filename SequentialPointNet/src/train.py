@@ -38,21 +38,26 @@ FRAME_GAP_DICT = {
     20 : 2,
 }
 
+def seed_worker(worker_id):
+    worker_seed = torch.initial_seed() % 2**32
+    np.random.seed(worker_seed)
+    random.seed(worker_seed)
+
 def main(args=None):
     parser = argparse.ArgumentParser(description = "Training")
 
     parser.add_argument('--batchSize', type=int, default=16, help='input batch size')#￥￥￥￥
-    parser.add_argument('--nepoch', type=int, default=150, help='number of epochs to train for')
+    parser.add_argument('--nepoch', type=int, default=50, help='number of epochs to train for')
     parser.add_argument('--INPUT_FEATURE_NUM', type=int, default = 3,  help='number of input point features')
     parser.add_argument('--temperal_num', type=int, default = 3,  help='number of input point features')
     parser.add_argument('--pooling', type=str, default='concatenation', help='how to aggregate temporal split features: vlad | concatenation | bilinear')
     parser.add_argument('--dataset', type=str, default='ntu60', help='how to aggregate temporal split features: ntu120 | ntu60')
 
-    parser.add_argument('--weight_decay', type=float, default=0.0008, help='weight decay (SGD only)')
-    parser.add_argument('--learning_rate', type=float, default=0.001, help='learning rate at t=0')#￥￥￥￥
+    parser.add_argument('--weight_decay', type=float, default=1.1942642635731862e-05, help='weight decay (SGD only)')
+    parser.add_argument('--learning_rate', type=float, default=9.49938556047843e-05, help='learning rate at t=0')#￥￥￥￥
     parser.add_argument('--gamma', type=float, default=0.5, help='')#￥￥￥￥
     parser.add_argument('--momentum', type=float, default=0.9, help='momentum (SGD only)')
-    parser.add_argument('--workers', type=int, default=0, help='number of data loading workers')
+    parser.add_argument('--workers', type=int, default=4, help='number of data loading workers')
     parser.add_argument('--seed', type=int, default=0, required=True)
 
     parser.add_argument('--root_path', type=str, default='C:\\Users\\Administrator\\Desktop\\LX\\paper\\dataset\\Prosessed_dataset\\01_MSR3D',  help='preprocess folder')
@@ -123,8 +128,8 @@ def main(args=None):
 
     os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 
-    torch.backends.cudnn.benchmark = True
-    #torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
     torch.cuda.empty_cache()
     ##############################
     # data_train = NTU_RGBD(root_path = opt.root_path,opt=opt,
@@ -149,7 +154,7 @@ def main(args=None):
     
     tets = data_train[0]
     
-    train_loader = DataLoader(dataset = data_train, batch_size = opt.batchSize, shuffle = True, drop_last = True,num_workers = 8)
+    train_loader = DataLoader(dataset = data_train, batch_size = opt.batchSize, shuffle = True, drop_last = True,num_workers = 4, worker_init_fn=seed_worker)
     
     
     # data_val = NTU_RGBD(root_path = opt.root_path, opt=opt,
@@ -169,7 +174,7 @@ def main(args=None):
         padding_strategy="zero_padding",
         sequence_format=opt.config
     )
-    val_loader = DataLoader(dataset = data_val, batch_size = 24,num_workers = 8)
+    val_loader = DataLoader(dataset = data_val, batch_size = 24,num_workers = 4)
     
     
     # NOTE:
@@ -191,7 +196,7 @@ def main(args=None):
     print(netR)
 
     criterion = torch.nn.CrossEntropyLoss().cuda()
-    optimizer = torch.optim.Adam(netR.parameters(), lr=opt.learning_rate, betas = (0.5, 0.999), eps=1e-06)
+    optimizer = torch.optim.Adam(netR.parameters(), lr=opt.learning_rate, weight_decay=opt.weight_decay)
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=opt.gamma)
     best_mAcc = 0.0
 

@@ -387,12 +387,15 @@ def main(args=None):
         overall_acc = tp_sum / confusion_counts.sum()
         class_acc = tp.float() / confusion_counts.sum(dim=1).clamp(min=1)
         mean_acc = class_acc.mean().item()
+    
 
         logging.info("Inference Performance")
         logging.info("----------------------------------------------------")
         logging.info(f"Total inference time:         {total_inference_time:.4f} s")
         logging.info(f"Average inference per sample: {avg_inference_time_ms:.4f} ms")
         logging.info("----------------------------------------------------\n")
+
+        logging.info(f"Per-Class Acc: {class_acc}")
 
         logging.info("Per-Class Precision / Recall / F1:")
         logging.info("----------------------------------------------------")

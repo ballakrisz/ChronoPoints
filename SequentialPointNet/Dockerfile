@@ -68,7 +68,12 @@ RUN pip install \
     tensorboard \
     einops \
     calflops \
-    transformers
+    transformers \
+    optuna \
+    optuna-dashboard \
+    kaleido \
+    pandas \
+    plotly 
 
 # install PointNet++ pytorch cuda ops (needed for FPS sampling and other GPU accelerated ops) --> THIS IS NOT PART OF THE ORIGINAL PAPER
 # IT WAS ADDED SO THATH THE MODEL COMPLEXITY AND INFERENCE COMPARISONS ARE FAIR (THIS BOOSTED THE FPS OF THE MODEL BY ~10)
