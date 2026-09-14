@@ -40,6 +40,13 @@ After the build finishes, start the container and attach to it:
 
 The `run_docker.sh` script automatically runs `docker exec -it` after starting the container, placing you directly into an interactive terminal session inside the container.
 
+## Hyperparameter tuning
+To optimize the hyperparameters of the model run:
+```bash
+cd src/action_cls
+python3 tf_optuna_tuning.py
+```
+
 ## Training
 To train the model on the provided dataset, run:
 ```bash
