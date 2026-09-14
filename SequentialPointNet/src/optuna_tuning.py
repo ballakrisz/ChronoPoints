@@ -185,7 +185,7 @@ DATA_ROOT = "/home/appuser/LIFT_benchmark"
 NUM_FRAME = 12
 SEED = 0
 
-EPOCHS = 50
+EPOCHS = 30
 
 BATCH_SIZE = 16
 NUM_WORKERS = 4
