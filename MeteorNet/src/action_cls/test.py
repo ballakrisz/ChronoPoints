@@ -320,7 +320,7 @@ def test():
             print("Restoring model from {}".format(FLAGS.model_path))
             saver.restore(sess, FLAGS.model_path)
         else:
-            print("No checkpoint loaded — training from scratch")
+            print("No checkpoint loaded - training from scratch")
 
         ops = {'pointclouds_pl': pointclouds_pl,
                'labels_pl': labels_pl,
