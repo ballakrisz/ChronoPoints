@@ -140,7 +140,7 @@ def main(args):
     config = f"f{args.clip_len}g{num_gap}"
     
     if args.output_dir:
-        args.output_dir = f"{args.output_dir}/{config}_seed_{args.seed}_optimized"
+        args.output_dir = f"{args.output_dir}/{config}_seed_{args.seed}"
         utils.mkdir(args.output_dir)
 
     logging.basicConfig(

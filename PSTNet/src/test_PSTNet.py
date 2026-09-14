@@ -339,7 +339,7 @@ def main(args=None):
     opt.config = config
     
     # Create run directory like second file
-    run_dir = os.path.join(opt.save_root_dir, f"{config}_seed_{opt.seed}_optimized")
+    run_dir = os.path.join(opt.save_root_dir, f"{config}_seed_{opt.seed}")
     os.makedirs(run_dir, exist_ok=True)
     opt.save_root_dir = run_dir
     
