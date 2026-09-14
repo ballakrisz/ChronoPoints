@@ -2,8 +2,8 @@
 This repository contains the code for the paper that introduced ChronoPoints [].
 
 ## Dataset
-Download the dataset from:  
-https://drive.google.com/file/d/1Xfz22RLZl0_2RmsJ2Wj2Fg8v-ongBgAE/view?usp=sharing
+Download the dataset zip file from:  
+https://doi.org/10.5281/zenodo.22671326
 
 Extract it so that your folder structure looks like this:
 ```bash
