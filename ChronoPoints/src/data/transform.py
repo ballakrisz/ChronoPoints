@@ -192,3 +192,13 @@ def temporal_dropout_with_padding(points_seq, masks_seq, drop_prob=0.3):
             dropped_masks.append(np.zeros_like(mask))
 
     return dropped_points, dropped_masks
+
+
+def random_point_dropout(points, max_ratio=0.3):
+    keep = np.random.rand(len(points)) > np.random.uniform(0, max_ratio)
+
+    # don't destroy the cloud
+    if keep.sum() < 512:
+        keep[np.random.choice(len(points), 512, replace=False)] = True
+
+    return points[keep]

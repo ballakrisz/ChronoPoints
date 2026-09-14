@@ -13,7 +13,7 @@ from torchinfo import summary
 sys.path.append(os.path.dirname(os.path.abspath(__file__))) # Add the current file's directory to sys.path
 sys.path.append(str(Path(__file__).resolve().parents[1])) # Add the src directory to sys.path
 
-from trajectory_cls.chronopoints_utils import CrossEncoderContrastiveLoss
+from trajectory_cls.chronopoints_utils import CrossEncoderContrastiveLoss, CrossEncoderContrastiveLossWithQueue
 from data.dataset import PointSeriesDataset
 from trajectory_cls.chronopoints_cls import ChronoPointsClassifier
 from logger import setup_logger
@@ -110,10 +110,10 @@ def train_one_epoch(classifier, dataloader, cls_loss, contrastive_loss,contrasti
 
         # CE loss
         loss_cls = cls_loss(logits, labels)
-        loss_contrastive = contrastive_loss(p_dist=p_dist, p_traj=p_traj, p_spatio=p_spatio)
+        # loss_contrastive = contrastive_loss(p_dist=p_dist, p_traj=p_traj, p_spatio=p_spatio)
         
         # combined objective
-        loss = loss_cls + contrastive_lambda * loss_contrastive
+        loss = loss_cls #+ contrastive_lambda * loss_contrastive
 
 
         # Backprop
@@ -209,6 +209,10 @@ def parse_args():
     parser.add_argument('--min_lr', type=float, default=1e-5, help='Minimum allowed learning rate.')
     parser.add_argument('--weight_decay', type=float, default=1e-4, help='Weight decay for the optimizer')
     parser.add_argument('--seed', type=int, default=None, help='Random seed for reproducibility')
+    parser.add_argument('--poly_order', type=int, default=3, help='Polynomial order for the trajectory encoder')
+    parser.add_argument('--K', type=int, default=128, help='Memory Queue size')
+    parser.add_argument('--warmup_epochs', type=int, default=10, help='Number of epochs for learning rate warmup')
+    parser.add_argument('--warmup_factor', type=float, default=1e-5, help='Initial LR = warmup_factor * base_lr')
     
     # Misc
     parser.add_argument('--num_workers', type=int, default=4, help='Number of worker processes used by the dataloaders')
@@ -217,7 +221,7 @@ def parse_args():
     parser.add_argument('--resume', type=str, default=None, help='Path to a run directory to resume training from.')
 
     # Dataset
-    parser.add_argument('--data_root', type=str, default='/home/appuser/chronopoints_cls_benchmark', help="Root directory of the chrono_points_cls_benchmark dataset")
+    parser.add_argument('--data_root', type=str, default='/home/appuser/LIFT_benchmark', help="Root directory of the chrono_points_cls_benchmark dataset")
 
     # Point cloud sequence
     parser.add_argument('--num_frame', type=int, default=None, help='Number of frames in each point cloud sequence.')
@@ -388,7 +392,7 @@ def main():
         fusion_hidden_factor=4,
         fusion_dropout=0.4,
         centroid_mode="bbox",
-        poly_order=3
+        poly_order=args.poly_order
     )
     classifier.to(device)
     
@@ -423,6 +427,7 @@ def main():
     # Loss
     cls_loss = torch.nn.CrossEntropyLoss()
     contrastive_loss = CrossEncoderContrastiveLoss(temperature=args.temperature).to(device)
+    # contrastive_loss = CrossEncoderContrastiveLossWithQueue(temperature=args.temperature, queue_size=args.K).to(device)
     contrastive_lambda = args.contrastive_lambda
 
     optimizer = torch.optim.Adam(
@@ -431,13 +436,22 @@ def main():
         weight_decay=args.weight_decay
     )
 
-    scheduler = torch.optim.lr_scheduler.LambdaLR(
-        optimizer,
-        lr_lambda=lambda epoch: max(
-            args.lr_decay_rate ** (epoch // args.lr_decay_step),
-            args.min_lr / args.lr
-        )
-    )
+    # Warmup + decay scheduler
+    warmup_epochs = args.warmup_epochs
+    warmup_factor = args.warmup_factor
+
+    def lr_lambda(epoch):
+        # Warmup phase
+        if epoch < warmup_epochs:
+            return warmup_factor + (1 - warmup_factor) * (epoch / warmup_epochs)
+        # Decay phase
+        else:
+            return max(
+                args.lr_decay_rate ** ((epoch - warmup_epochs) // args.lr_decay_step),
+                args.min_lr / args.lr
+            )
+
+    scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda)
 
     # -------------------------
     # LOAD STATE IF RESUMING
