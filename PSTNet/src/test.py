@@ -12,6 +12,7 @@ from tqdm import tqdm
 import logging
 import argparse
 import random
+from thop import profile
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
@@ -32,6 +33,125 @@ FRAME_GAP_DICT = {
     18 : 2,
     20 : 2,
 }
+
+def compute_model_complexity(model, dataloader, device):
+
+    model.eval()
+
+    # ====================================================
+    # Parameters
+    # ====================================================
+
+    total_params = sum(p.numel() for p in model.parameters())
+    trainable_params = sum(
+        p.numel() for p in model.parameters()
+        if p.requires_grad
+    )
+
+    # ====================================================
+    # Get sample input
+    # ====================================================
+
+    clip, _, _ = next(iter(dataloader))
+
+    # Use a SINGLE sample for latency/FLOPs benchmarking
+    single_clip = clip[:1].to(device)
+
+    # ====================================================
+    # FLOPs / MACs / Params
+    # ====================================================
+
+    # THOP counts multiply-accumulate operations (MACs).
+    macs, thop_params = profile(
+        model,
+        inputs=(single_clip,),
+        verbose=False
+    )
+
+    # If you want conventional FLOPs where
+    # 1 MAC = 2 FLOPs:
+    flops = 2 * macs
+
+    print("-------------------- SANITY CHECK --------------------")
+    print(f"Total parameters:     {total_params:,}")
+    print(f"Trainable parameters: {trainable_params:,}")
+    print("------------------------------------------------------")
+
+    print("\n---------------- MODEL COMPLEXITY ----------------")
+    print(f"FLOPs:  {flops / 1e9:.4f} GFLOPs")
+    print(f"MACs:   {macs / 1e9:.4f} GMACs")
+    print(f"Params: {thop_params / 1e6:.4f} M")
+    print("--------------------------------------------------")
+
+    # ====================================================
+    # Robust inference benchmarking
+    # ====================================================
+
+    warmup_iters = 20
+    benchmark_iters = 100
+
+    print("\nWarming up GPU...")
+
+    with torch.no_grad():
+
+        # --------------------------------
+        # Warmup
+        # --------------------------------
+
+        for _ in range(warmup_iters):
+            _ = model(single_clip)
+
+        if device.type == "cuda":
+            torch.cuda.synchronize()
+
+        # --------------------------------
+        # Benchmark
+        # --------------------------------
+
+        timings = []
+
+        for _ in range(benchmark_iters):
+
+            if device.type == "cuda":
+                torch.cuda.synchronize()
+
+            start = time.perf_counter()
+
+            _ = model(single_clip)
+
+            if device.type == "cuda":
+                torch.cuda.synchronize()
+
+            end = time.perf_counter()
+
+            timings.append(end - start)
+
+    timings = np.array(timings)
+
+    # ====================================================
+    # Statistics
+    # ====================================================
+
+    mean_ms = timings.mean() * 1000
+    std_ms = timings.std() * 1000
+    median_ms = np.median(timings) * 1000
+    min_ms = timings.min() * 1000
+    max_ms = timings.max() * 1000
+
+    fps = 1000.0 / mean_ms
+
+    print("\n---------------- INFERENCE SPEED ----------------")
+    print(f"Input shape:       {tuple(single_clip.shape)}")
+    print(f"Warmup iterations: {warmup_iters}")
+    print(f"Benchmark runs:    {benchmark_iters}")
+    print("")
+    print(f"Mean latency:      {mean_ms:.3f} ms")
+    print(f"Median latency:    {median_ms:.3f} ms")
+    print(f"Std latency:       {std_ms:.3f} ms")
+    print(f"Min latency:       {min_ms:.3f} ms")
+    print(f"Max latency:       {max_ms:.3f} ms")
+    print(f"Throughput:        {fps:.2f} FPS")
+    print("--------------------------------------------------\n")
 
 def test(model, data_loader, device, opt, output_dir):
     """Test the model and compute all metrics (OA, mAcc, precision, recall, F1, inference time)"""
@@ -219,7 +339,7 @@ def main(args=None):
     opt.config = config
     
     # Create run directory like second file
-    run_dir = os.path.join(opt.save_root_dir, f"{config}_seed_{opt.seed}")
+    run_dir = os.path.join(opt.save_root_dir, f"{config}_seed_{opt.seed}_optimized")
     os.makedirs(run_dir, exist_ok=True)
     opt.save_root_dir = run_dir
     
@@ -300,6 +420,8 @@ def main(args=None):
     if torch.cuda.device_count() > 1:
         model = nn.DataParallel(model)
     model.to(device)
+    
+    compute_model_complexity(model, data_loader_test, device)
     
     criterion = nn.CrossEntropyLoss()
     
