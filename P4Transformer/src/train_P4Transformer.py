@@ -282,11 +282,11 @@ def parse_args():
     parser.add_argument('--frame-interval', default=1, type=int, metavar='N', help='interval of sampled frames')
     parser.add_argument('--num-points', default=512, type=int, metavar='N', help='number of points per frame')
     # P4D
-    parser.add_argument('--radius', default=0.7, type=float, help='radius for the ball query')
-    parser.add_argument('--nsamples', default=32, type=int, help='number of neighbors for the ball query')
+    parser.add_argument('--radius', default=0.8580283854413218, type=float, help='radius for the ball query')
+    parser.add_argument('--nsamples', default=40, type=int, help='number of neighbors for the ball query')
     parser.add_argument('--spatial-stride', default=32, type=int, help='spatial subsampling rate')
-    parser.add_argument('--temporal-kernel-size', default=3, type=int, help='temporal kernel size')
-    parser.add_argument('--temporal-stride', default=2, type=int, help='temporal stride')
+    parser.add_argument('--temporal-kernel-size', default=5, type=int, help='temporal kernel size')
+    parser.add_argument('--temporal-stride', default=1, type=int, help='temporal stride')
     # embedding
     parser.add_argument('--emb-relu', default=False, action='store_true')
     # transformer
@@ -299,9 +299,9 @@ def parse_args():
     parser.add_argument('-b', '--batch-size', default=10, type=int)
     parser.add_argument('--epochs', default=50, type=int, metavar='N', help='number of total epochs to run')
     parser.add_argument('-j', '--workers', default=4, type=int, metavar='N', help='number of data loading workers (default: 16)')
-    parser.add_argument('--lr', default=4.839857512495626e-05, type=float, help='initial learning rate')
+    parser.add_argument('--lr', default=3.417109854820544e-05, type=float, help='initial learning rate')
     parser.add_argument('--momentum', default=0.9, type=float, metavar='M', help='momentum')
-    parser.add_argument('--wd', '--weight-decay', default=1.1807504140017312e-06, type=float, metavar='W', help='weight decay (default: 1e-4)', dest='weight_decay')
+    parser.add_argument('--wd', '--weight-decay', default=0.00047766532807727385, type=float, metavar='W', help='weight decay (default: 1e-4)', dest='weight_decay')
     parser.add_argument('--lr-milestones', nargs='+', default=[20, 30], type=int, help='decrease lr on milestones')
     parser.add_argument('--lr-gamma', default=0.1, type=float, help='decrease lr by a factor of lr-gamma')
     parser.add_argument('--lr-warmup-epochs', default=10, type=int, help='number of warmup epochs')

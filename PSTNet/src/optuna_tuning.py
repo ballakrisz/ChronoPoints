@@ -51,10 +51,10 @@ SEED = 0 # TODO: SET TO 0
 
 EPOCHS = 60
 
-BATCH_SIZE = 16
+BATCH_SIZE = 8
 NUM_WORKERS = 4
 
-N_TRIALS = 50
+TARGET_TRIALS = 100
 
 WARMUP_EPOCHS = 5
 LR_MILESTONES = [20, 30]
@@ -71,6 +71,8 @@ config = f"f{NUM_FRAME}g{num_gap}"
 
 OUTPUT_DIR = Path(f"./optuna_results_{config}")
 OUTPUT_DIR.mkdir(exist_ok=True)
+print("CREATED")
+
 
 PLOTS_DIR = OUTPUT_DIR / "plots"
 PLOTS_DIR.mkdir(exist_ok=True)
@@ -153,6 +155,25 @@ def objective(trial):
         )
     else:
         momentum = None
+        
+        
+    # --------------------------------------------------------
+    # PSTNet ARCHITECTURE HYPERPARAMETERS
+    # --------------------------------------------------------
+
+    radius = trial.suggest_float(
+        "radius",
+        0.05,
+        0.60,
+        step=0.05
+    )
+
+    nsamples = trial.suggest_int(
+        "nsamples",
+        4,
+        32,
+        step=4
+    )
     
     # --------------------------------------------------------
     # DATALOADERS
@@ -178,7 +199,7 @@ def objective(trial):
     # --------------------------------------------------------
 
     Model = getattr(Models, 'MSRAction')
-    model = Model(radius=0.5, nsamples=9, num_classes=5)
+    model = Model(radius=radius, nsamples=nsamples, num_classes=5)
     if torch.cuda.device_count() > 1:
         model = nn.DataParallel(model)
     model.to(DEVICE)
@@ -329,7 +350,7 @@ if __name__ == "__main__":
 
     pruner = optuna.pruners.MedianPruner(
         n_startup_trials=3,
-        n_warmup_steps=30
+        n_warmup_steps=20
     )
 
     # --------------------------------------------------------
@@ -351,10 +372,16 @@ if __name__ == "__main__":
     # START OPTIMIZATION
     # --------------------------------------------------------
 
-    study.optimize(
-        objective,
-        n_trials=N_TRIALS
-    )
+    remaining_trials = max(0, TARGET_TRIALS - len(study.trials))
+
+    if remaining_trials > 0:
+        print(
+            f"Existing trials: {len(study.trials)} | "
+            f"Running: {remaining_trials}"
+        )
+        study.optimize(objective, n_trials=remaining_trials)
+    else:
+        print(f"Already have {len(study.trials)} trials. Nothing to run.")
 
     # ========================================================
     # BEST TRIAL
@@ -396,83 +423,6 @@ if __name__ == "__main__":
         index=False
     )
 
-    # ========================================================
-    # GENERATE VISUALIZATIONS
-    # ========================================================
-
-    print("\nGenerating Optuna visualizations...\n")
-
-    # --------------------------------------------------------
-    # PARALLEL COORDINATE
-    # --------------------------------------------------------
-
-    fig = plot_parallel_coordinate(
-        study,
-        params=[
-            "learning_rate",
-            "weight_decay",
-            "optimizer",
-            "momentum"
-        ]
-    )
-
-    fig.write_html(
-        PLOTS_DIR / "parallel_coordinate.html"
-        )
-
-    # --------------------------------------------------------
-    # PARAM IMPORTANCE
-    # --------------------------------------------------------
-
-    fig = plot_param_importances(study)
-
-    fig.write_html(
-        PLOTS_DIR / "param_importance.html"
-    )
-
-    # --------------------------------------------------------
-    # OPTIMIZATION HISTORY
-    # --------------------------------------------------------
-
-    fig = plot_optimization_history(study)
-
-    fig.write_html(
-        PLOTS_DIR / "optimization_history.html"
-    )
-
-    # --------------------------------------------------------
-    # SLICE PLOTS
-    # --------------------------------------------------------
-
-    fig = plot_slice(
-        study,
-        params=[
-            "learning_rate",
-            "weight_decay",
-            "optimizer",
-            "momentum"
-        ]
-    )
-
-    fig.write_html(
-        PLOTS_DIR / "slice_plot.html"
-    )
-
-    # --------------------------------------------------------
-    # CONTOUR PLOT
-    # --------------------------------------------------------
-
-    fig = plot_contour(
-        study,
-        params=[
-            "learning_rate",
-            "weight_decay"
-        ]
-    )
-
-    fig.write_html(
-        PLOTS_DIR / "lr_weight_decay_contour.html"
-    )
 
     # ========================================================
     # DONE

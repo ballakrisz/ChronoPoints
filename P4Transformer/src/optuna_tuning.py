@@ -67,7 +67,7 @@ def parse_args():
     parser.add_argument('--dim-head', default=128, type=int, help='transformer dim for each head')
     parser.add_argument('--mlp-dim', default=2048, type=int, help='transformer mlp dim')
     # training
-    parser.add_argument('-b', '--batch-size', default=14, type=int)
+    parser.add_argument('-b', '--batch-size', default=10, type=int)
     parser.add_argument('--epochs', default=50, type=int, metavar='N', help='number of total epochs to run')
     parser.add_argument('-j', '--workers', default=4, type=int, metavar='N', help='number of data loading workers (default: 16)')
     parser.add_argument('--lr', default=0.01, type=float, help='initial learning rate')
@@ -98,7 +98,7 @@ SEED = 0 # TODO: SET TO 0
 
 EPOCHS = 30
 
-TARGET_TRIALS = 50
+TARGET_TRIALS = 100
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -195,6 +195,38 @@ def objective(trial):
         )
     else:
         momentum = None
+        
+    # --------------------------------------------------------
+    # P4D ARCHITECTURE HYPERPARAMETERS
+    # --------------------------------------------------------
+
+    radius = trial.suggest_float(
+        "radius",
+        0.05,
+        1.5
+    )
+
+    nsamples = trial.suggest_int(
+        "nsamples",
+        8,
+        64,
+        step=8
+    )
+
+    spatial_stride = trial.suggest_categorical(
+        "spatial_stride",
+        [8, 16, 32, 64]
+    )
+
+    temporal_kernel_size = trial.suggest_categorical(
+        "temporal_kernel_size",
+        [1, 3, 5]
+    )
+
+    temporal_stride = trial.suggest_categorical(
+        "temporal_stride",
+        [1, 2]
+    )
     
     # --------------------------------------------------------
     # DATALOADERS
@@ -220,8 +252,8 @@ def objective(trial):
     # --------------------------------------------------------
 
     Model = getattr(Models, args.model)
-    model = Model(radius=args.radius, nsamples=args.nsamples, spatial_stride=args.spatial_stride,
-                  temporal_kernel_size=args.temporal_kernel_size, temporal_stride=args.temporal_stride,
+    model = Model(radius=radius, nsamples=nsamples, spatial_stride=spatial_stride,
+                  temporal_kernel_size=temporal_kernel_size, temporal_stride=temporal_stride,
                   emb_relu=args.emb_relu,
                   dim=args.dim, depth=args.depth, heads=args.heads, dim_head=args.dim_head,
                   mlp_dim=args.mlp_dim, num_classes=train_dataset.num_types)
