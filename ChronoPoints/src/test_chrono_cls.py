@@ -37,7 +37,7 @@ def compute_model_complexity(model, dataloader, device, logger):
     # ====================================================
     # Get sample input
     # ====================================================
-    pcl_seq, masks, velocities, stamps, class_labels, type_labels = next(iter(dataloader))
+    pcl_seq, masks, velocities, stamps, class_labels, type_labels,_,_ = next(iter(dataloader))
 
     # single sample
     pcl_sequence = pcl_seq[:1].to(device)
@@ -162,7 +162,7 @@ def evaluate(classifier, dataloader, device, logger, label_decoder=None):
     total_inference_time = 0.0
     
     with torch.no_grad():
-        for pcl_seq, masks, velocities, stamps, class_labels, type_labels in tqdm(dataloader):
+        for pcl_seq, masks, velocities, stamps, class_labels, type_labels,_,_ in tqdm(dataloader):
             pcl_sequence = pcl_seq.to(device, non_blocking=True)
             mask = masks.to(device, non_blocking=True)
             velocities = velocities.to(device, non_blocking=True)
@@ -431,7 +431,7 @@ def main():
         fusion_hidden_factor=4,
         fusion_dropout=0.4,
         centroid_mode="bbox",
-        poly_order=3
+        poly_order=train_args['poly_order']
     )
 
     classifier.load_state_dict(state['model_state_dict'], strict=False)

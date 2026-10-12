@@ -24,7 +24,7 @@ If you use this model, please cite the original paper:
 Build the Docker image by running:  
 
 ```bash
-cd PSTNet
+cd P4Transformer
 ./build_docker.sh
 ```
 

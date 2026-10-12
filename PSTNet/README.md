@@ -46,12 +46,14 @@ python3 optuna_tuning.py
 To train the model on the provided dataset, run:
 ```bash
 cd src
-python3 train_PSTNet.py --clip-len 10 --seed 0
+python3 train_PSTNet.py --clip-len 12 --seed 0
 ```
 You can adjust the sequence length using the `clip-len` parameter.
+
+**Please note that PSTNet only works with trajectory lengths divisible by 4**
 
 ## Evaluation
 To evaluate a trained model, run:
 ```bash
-python3 test_PSTNet.py --clip-len 10 --seed 0
+python3 test_PSTNet.py --clip-len 12 --seed 0
 ```

@@ -163,7 +163,7 @@ class PointSeriesDataset(Dataset):
         self.sampling_strategy = sampling_strategy
         self.padding_strategy = padding_strategy
         self.sequence_format = sequence_format
-        self.augment = split == "test"
+        self.augment = split == "train"
 
         # Load dictionaries for class encoding
         self.type_encoder = json.loads(Path(os.path.join(data_root_dir, "type_encoder.json")).read_text())
