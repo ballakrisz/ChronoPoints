@@ -70,6 +70,10 @@ else
         --volume /tmp/.X11-unix:/tmp/.X11-unix \
         --volume ${src_folder}:/home/appuser/src \
         --volume ${dataset_folder}:/home/appuser/LIFT_benchmark \
+        --volume ${HOME}/.zshrc:/home/appuser/.zshrc:ro \
+        --volume ${HOME}/.zsh:/home/appuser/.zsh:ro \
+        --volume ${HOME}/.fzf:/home/appuser/.fzf:ro \
+        --volume ${HOME}/.config/starship.toml:/home/appuser/.config/starship.toml:ro \
         --network host \
         --interactive \
         --privileged \
@@ -82,4 +86,4 @@ else
         $image_name:$image_tag 
 fi
 
-docker exec -it ${container_name} bash
+docker exec -it ${container_name} zsh

@@ -1,5 +1,23 @@
-# ChronoPoints
-This repository contains the code for the paper that introduced ChronoPoints [].
+# [ChronoPoints: Trajectory-based classification of small flying objects](https://doi.org/10.1016/j.mlwa.2026.101045)
+
+
+![LiDAR point cloud visualization](ChronoPoints/misc/model_overview.png)
+
+
+## Citation
+If you find our work useful in your research, please consider citing:
+```
+@article{KESZLER2026101045,
+    title = {ChronoPoints: Trajectory-based classification of small flying objects},
+    journal = {Machine Learning with Applications},
+    pages = {101045},
+    year = {2026},
+    issn = {2666-8270},
+    doi = {https://doi.org/10.1016/j.mlwa.2026.101045},
+    url = {https://www.sciencedirect.com/science/article/pii/S2666827026002100},
+    author = {Anita Keszler and Krisztián Balla and András L. Majdik},
+}
+```
 
 ## Dataset
 Download the dataset zip file from:  

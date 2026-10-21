@@ -7,6 +7,8 @@ import random
 import torch
 import argparse
 from calflops import calculate_flops
+import pandas as pd
+import matplotlib.pyplot as plt
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(str(Path(__file__).resolve().parents[1]))
@@ -22,6 +24,196 @@ FRAME_GAP_DICT = {
     10: 1, 12: 1, 14: 1,
     16: 2, 18: 2, 20: 2,
 }
+
+def plot_metrics(metrics_list, save_dir, logger):
+
+    # ====================================================
+    # Plot text sizes
+    # ====================================================
+    title_size = 24
+    label_size = 22
+    tick_size = 20
+    legend_size = 12
+
+    df = pd.DataFrame(metrics_list)
+
+    logger.info("Generating plots in: {}".format(save_dir))
+
+    # -------------------------------
+    # 1. Distance vs Sparsity
+    # -------------------------------
+
+    plt.figure(figsize=(8, 7))
+
+    plt.scatter(
+        df['distance'],
+        df['sparsity'],
+        alpha=0.6,
+        s=30
+    )
+
+    plt.xlabel(
+        'Distance (m)',
+        fontsize=label_size
+    )
+    plt.ylabel(
+        'Density (avg. points per frame)',
+        fontsize=label_size,
+        labelpad=10
+    )
+    plt.title(
+        'Distance vs Density',
+        fontsize=title_size,
+        pad=15
+    )
+
+    plt.xticks(fontsize=tick_size)
+    plt.yticks(fontsize=tick_size)
+
+    plt.grid(True, alpha=0.3)
+
+    plt.tight_layout()
+    plt.savefig(save_dir / 'distance_vs_density.png')
+    plt.close()
+
+    # -------------------------------
+    # 2. FOV position vs Sparsity
+    # -------------------------------
+
+    for metric, xlabel, title, filename in [
+        (
+            'azimuth',
+            'Azimuth (deg)',
+            'Azimuth vs Density',
+            'azimuth_vs_density.png'
+        ),
+        (
+            'elevation',
+            'Elevation (deg)',
+            'Elevation vs Density',
+            'elevation_vs_density.png'
+        )
+    ]:
+
+        plt.figure(figsize=(8, 7))
+
+        plt.scatter(
+            df[metric],
+            df['sparsity'],
+            alpha=0.6,
+            s=30
+        )
+
+        plt.xlabel(
+            xlabel,
+            fontsize=label_size
+        )
+        plt.ylabel(
+            'Density (avg. points per frame)',
+            fontsize=label_size,
+            labelpad=10
+        )
+        plt.title(
+            title,
+            fontsize=title_size,
+            pad=15
+        )
+
+        plt.xticks(fontsize=tick_size)
+        plt.yticks(fontsize=tick_size)
+
+        plt.grid(True, alpha=0.3)
+
+        plt.tight_layout()
+        plt.savefig(save_dir / filename)
+        plt.close()
+
+    # -------------------------------
+    # 3. Accuracy vs each metric
+    # -------------------------------
+
+    def binned_accuracy(df, metric, bins=20):
+
+        df['bin'] = pd.cut(
+            df[metric],
+            bins=bins
+        )
+
+        grouped = df.groupby(
+            'bin',
+            observed=False
+        )['is_correct'].agg([
+            'mean',
+            'count'
+        ])
+
+        # Remove bins with zero samples
+        grouped = grouped[grouped['count'] > 0]
+
+        centers = [
+            mid for mid, _ in zip(
+                grouped.index.categories.mid,
+                range(len(grouped))
+            )
+        ]
+
+        return np.array(centers), grouped['mean'].values
+
+    for metric, xlabel, ptitle, filename in [
+        (
+            'distance',
+            'Distance (m)',
+            'Distance',
+            'accuracy_vs_distance.png'
+        ),
+        (
+            'sparsity',
+            'Density (avg. points per frame)',
+            'Density',
+            'accuracy_vs_density.png'
+        )
+    ]:
+
+        centers, acc = binned_accuracy(
+            df,
+            metric
+        )
+
+        plt.figure(figsize=(8, 5))
+
+        plt.plot(
+            centers,
+            acc,
+            marker='o',
+            linestyle='-',
+            color='b'
+        )
+
+        plt.xlabel(
+            xlabel,
+            fontsize=label_size
+        )
+        plt.ylabel(
+            'Accuracy',
+            fontsize=label_size,
+            labelpad=10
+        )
+        plt.title(
+            f'Accuracy vs {ptitle}',
+            fontsize=title_size
+        )
+
+        plt.xticks(fontsize=tick_size)
+        plt.yticks(fontsize=tick_size)
+
+        plt.grid(True, alpha=0.3)
+        plt.ylim([0, 1.05])
+
+        plt.tight_layout()
+        plt.savefig(save_dir / filename)
+        plt.close()
+
+    logger.info("All plots saved.")
 
 
 def compute_model_complexity(model, dataloader, device, logger):
@@ -161,8 +353,10 @@ def evaluate(classifier, dataloader, device, logger, label_decoder=None):
     # =========================
     total_inference_time = 0.0
     
+    all_metrics = []
+    
     with torch.no_grad():
-        for pcl_seq, masks, velocities, stamps, class_labels, type_labels,_,_ in tqdm(dataloader):
+        for pcl_seq, masks, velocities, stamps, class_labels, type_labels, raw_counts, raw_centroids in tqdm(dataloader):
             pcl_sequence = pcl_seq.to(device, non_blocking=True)
             mask = masks.to(device, non_blocking=True)
             velocities = velocities.to(device, non_blocking=True)
@@ -210,6 +404,48 @@ def evaluate(classifier, dataloader, device, logger, label_decoder=None):
 
                     for c_pred in range(num_classes):
                         confusion_counts[c_true, c_pred] += (preds[mask_c] == c_pred).sum().item()
+                        
+                        
+            for b in range(pcl_seq.size(0)):
+                counts = raw_counts[b].cpu().numpy()          # (T,)
+                centroids = raw_centroids[b].cpu().numpy()    # (T, 3)
+
+                valid_idx = np.where(counts > 0)[0]
+                if len(valid_idx) == 0:
+                    continue
+
+                # Average centroid over all valid frames
+                avg_centroid = np.mean(centroids[valid_idx], axis=0)   # (3,)
+
+                distance = np.linalg.norm(avg_centroid)
+
+                # Sparsity: average number of raw points per valid frame
+                sparsity = np.mean(counts[valid_idx])
+
+                # FOV angles in degrees
+                if distance < 1e-6:
+                    azimuth_deg, elevation_deg = 0.0, 0.0
+                else:
+                    azimuth_rad = np.arctan2(avg_centroid[1], avg_centroid[0])
+                    elevation_rad = np.arcsin(np.clip(avg_centroid[2] / distance, -1.0, 1.0))
+                    azimuth_deg = np.degrees(azimuth_rad)
+                    elevation_deg = np.degrees(elevation_rad)
+                    
+                if labels[b] == 1:
+                    continue
+                
+                if azimuth_deg < -30:
+                    continue
+
+                all_metrics.append({
+                    'distance': distance,
+                    'sparsity': sparsity,
+                    'azimuth': azimuth_deg,      # now in degrees
+                    'elevation': elevation_deg,  # now in degrees
+                    'is_correct': is_correct[b].item(),
+                    'true_label': labels[b].item(),
+                    'pred_label': preds[b].item(),
+                })
 
     # =========================
     # Accuracy
@@ -322,7 +558,7 @@ def evaluate(classifier, dataloader, device, logger, label_decoder=None):
 
     logger.info("----------------------------------------------------\n")
 
-    return overall_acc, mean_acc
+    return overall_acc, mean_acc, all_metrics
 
 # =========================
 # Args
@@ -399,8 +635,8 @@ def main():
     # Dataset
     # -------------------------
     test_dataset = PointSeriesDataset(
-        data_root_dir=train_args['data_root'],
-        split='test',
+        data_root_dir="/home/appuser/LIFT_benchmark",
+        split='train',
         max_points_per_frame=512,
         single_return_only=True,
         preload=True,
@@ -456,13 +692,18 @@ def main():
     # -------------------------
     # Evaluate
     # -------------------------
-    test_OA, test_mAcc = evaluate(
+    test_OA, test_mAcc, all_metrics = evaluate(
         classifier, test_dataloader, device, logger, label_decoder
     )
 
     logger.info(f"Test Overall Accuracy: {test_OA*100:.2f}%")
     logger.info(f"Test Mean Accuracy: {test_mAcc*100:.2f}%")
 
+    # ================== Generate plots ==================
+    if all_metrics:
+        plot_metrics(all_metrics, run_dir, logger)
+    else:
+        logger.warning("No metrics collected – skipping plots.")
 
 if __name__ == '__main__':
     main()
